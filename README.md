@@ -30,6 +30,9 @@
 - **Incremental Scraping:** Basic support to avoid re-scraping already retrieved results using a SQLite database.
 - **Command-Line Interface (CLI):** User-friendly command-line interface for running scrapes with various options.
 
+> [!WARNING]
+> This project is currently in a state of "mostly functional," kind of like a slightly wonky robot butler – it _usually_ does what you ask, but sometimes it might bring you a sock instead of a cup of tea. This was also put together during a caffeine-fueled weekend, so please don't have _too_ high of expectations. Bug reports are greatly appreciated (and will be rewarded with virtual high-fives)!
+
 ## Installation
 
 **Clone the repository:**
