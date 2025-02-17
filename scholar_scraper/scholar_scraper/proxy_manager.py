@@ -1,18 +1,15 @@
 # scholar_scraper/scholar_scraper/proxy_manager.py
-from free_proxy import FreeProxy
 import asyncio
-import httpx  # Changed from aiohttp to httpx
 import logging
-from .exceptions import NoProxiesAvailable
 import random
-from httpx_caching import AsyncCacheControlTransport  # Import httpx-caching
+
+import httpx
+import httpx_caching  # Import the library
+from fp.fp import FreeProxy
+
+from .exceptions import NoProxiesAvailable
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-
-# Configure caching transport - using sqlite backend, cache for 1 hour
-cache_transport = AsyncCacheControlTransport(
-    cache_etags=True, storage=httpx_caching.FileCache(cache_dir="proxy_http_cache")
-)  # separate cache for proxy testing
 
 
 class ProxyManager:
@@ -21,21 +18,28 @@ class ProxyManager:
         self.proxy_list = []
         self.check_anonymity = check_anonymity
         self.logger = logging.getLogger(__name__)
+        self.client = self._create_client()  # Create a cached client here as well
 
-    async def _test_proxy(self, proxy, session):  # session is httpx.AsyncClient now
+    def _create_client(self):
+        """Creates an httpx.AsyncClient with caching enabled."""
+        return httpx_caching.AsyncClient(
+            mounts={"https://": httpx_caching.AsyncCacheControl(cacheable_methods=["GET"]), "http://": httpx.AsyncTransport()},
+            cache=httpx_caching.FileCache(cache_dir="proxy_http_cache"),
+        )
+
+    async def _test_proxy(self, proxy):  # No session argument needed
         """Tests a single proxy for speed and anonymity."""
-        test_url = "https://www.google.com"  # Use a reliable test URL
+        test_url = "https://www.google.com"
         try:
             start_time = asyncio.get_event_loop().time()
-            response = await session.get(
-                test_url, proxies={"http": f"http://{proxy}", "https": f"https://{proxy}"}, timeout=5
-            )  # httpx proxies format
-            response.raise_for_status()  # Check for HTTP errors
+            response = await self.client.get(
+                test_url, proxies={"http://": f"http://{proxy}", "https://": f"https://{proxy}"}, timeout=5
+            )  # Use self.client
+            response.raise_for_status()
             end_time = asyncio.get_event_loop().time()
             latency = end_time - start_time
 
             if self.check_anonymity:
-                # Basic anonymity check (can be improved with dedicated APIs)
                 if "X-Forwarded-For" in response.headers or "Via" in response.headers:
                     anonymity = "Transparent"
                 else:
@@ -44,8 +48,7 @@ class ProxyManager:
                 anonymity = "Unknown"
             return proxy, latency, anonymity
 
-        except (httpx.HTTPError, httpx.RequestError, asyncio.TimeoutError) as e:  # httpx errors
-            # self.logger.debug(f"Proxy {proxy} failed: {e}") # Log at debug level
+        except (httpx.HTTPError, httpx.RequestError, asyncio.TimeoutError) as e:
             return None, None, None
 
     async def get_working_proxies(self, num_proxies=10):
@@ -55,17 +58,15 @@ class ProxyManager:
             raise NoProxiesAvailable("No raw proxies found from free-proxy.")
 
         working_proxies = []
-        async with httpx.AsyncClient(transport=cache_transport) as session:  # httpx AsyncClient, pass transport here
-            tasks = [self._test_proxy(proxy, session) for proxy in raw_proxies]
-            results = await asyncio.gather(*tasks)
+        tasks = [self._test_proxy(proxy) for proxy in raw_proxies]  # No session needed
+        results = await asyncio.gather(*tasks)
 
-            for proxy, latency, anonymity in results:
-                if proxy:  # If the proxy test was successful
-                    working_proxies.append((proxy, latency, anonymity))
+        for proxy, latency, anonymity in results:
+            if proxy:
+                working_proxies.append((proxy, latency, anonymity))
 
-        # Sort by latency (fastest first)
         working_proxies.sort(key=lambda x: x[1])
-        self.proxy_list = [p[0] for p in working_proxies[:num_proxies]]  # Store only proxy string
+        self.proxy_list = [p[0] for p in working_proxies[:num_proxies]]
         self.logger.info(f"Found {len(self.proxy_list)} working proxies.")
         if not self.proxy_list:
             raise NoProxiesAvailable("No working proxies found after testing")

@@ -1,0 +1,13 @@
+# pyproject.toml (outer scholar_scraper directory)
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scholar_scraper"  # Choose a package name
+version = "0.1.0"  # Start with a version number
+description = "A tool to scrape Google Scholar"
+# Add other metadata as needed (author, license, etc.)
+
+[project.scripts]
+scholar-scraper = "scholar_scraper.main:main"  # Create a command-line entry point

@@ -1,59 +1,60 @@
 # scholar_scraper/scholar_scraper/fetcher.py
 import asyncio
+from .utils import get_random_user_agent, get_random_delay, detect_captcha
+from .proxy_manager import ProxyManager
+from .exceptions import CaptchaException, NoProxiesAvailable
 import logging
 import re
+from parsel import Selector
 from typing import Optional
-
-import httpx  # Changed from aiohttp to httpx
-from httpx_caching import AsyncCacheControlTransport  # Import httpx-caching
-from parsel import Selector  # Keep parsel.Selector
-
-from .exceptions import CaptchaException, NoProxiesAvailable
-from .proxy_manager import ProxyManager
-from .utils import detect_captcha, get_random_delay, get_random_user_agent
+import httpx
+import httpx_caching  # Import the library, but not a specific class
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-
-# Configure caching transport - using sqlite backend, cache for 1 hour
-cache_transport = AsyncCacheControlTransport(cache_etags=True, storage=httpx_caching.FileCache(cache_dir="http_cache"))
 
 
 class Fetcher:
     def __init__(self, proxy_manager=None):
         self.proxy_manager = proxy_manager or ProxyManager()
         self.logger = logging.getLogger(__name__)
+        self.client = self._create_client()  # Create a client with caching
+
+    def _create_client(self):
+        """Creates an httpx.AsyncClient with caching enabled."""
+        return httpx_caching.AsyncClient(
+            mounts={
+                "https://": httpx_caching.AsyncCacheControl(
+                    cacheable_methods=["GET"]
+                ),  # Cache only GET requests, and only on https
+                "http://": httpx.AsyncTransport(),  # bypass cache on http
+            },
+            cache=httpx_caching.FileCache(cache_dir="http_cache"),  # set location
+        )
 
     async def fetch_page(self, url, retry_count=3, retry_delay=10):
         """Fetches a single page asynchronously, with retries and proxy rotation."""
         headers = {"User-Agent": get_random_user_agent()}
         proxy = self.proxy_manager.get_random_proxy()
-        proxies = {"http": f"http://{proxy}", "https": f"https://{proxy}"} if proxy else None  # httpx proxies format
+        proxies = {"http://": f"http://{proxy}", "https://": f"https://{proxy}"} if proxy else None
 
         for attempt in range(retry_count):
             try:
-                async with httpx.AsyncClient(
-                    transport=cache_transport, proxies=proxies, timeout=10
-                ) as client:  # httpx AsyncClient, pass proxies and transport here
-                    response = await client.get(url, headers=headers)
-                    response.raise_for_status()  # Raise HTTPError for bad responses
-                    html_content = response.text  # httpx response.text
-                    if detect_captcha(html_content):
-                        raise CaptchaException("CAPTCHA detected!")  # Raise CAPTCHA exception
-                    return html_content
-            except (
-                httpx.HTTPError,
-                httpx.RequestError,
-                asyncio.TimeoutError,
-                CaptchaException,
-                NoProxiesAvailable,
-            ) as e:  # httpx errors
+                response = await self.client.get(
+                    url, headers=headers, proxies=proxies, timeout=10
+                )  # Use the pre-configured client
+                response.raise_for_status()
+                html_content = response.text
+                if detect_captcha(html_content):
+                    raise CaptchaException("CAPTCHA detected!")
+                return html_content
+            except (httpx.HTTPError, httpx.RequestError, asyncio.TimeoutError, CaptchaException, NoProxiesAvailable) as e:
                 self.logger.warning(f"Attempt {attempt + 1} failed for {url}: {e}")
                 if isinstance(e, NoProxiesAvailable):
                     self.logger.error(f"No proxies available: {e}")
                     return None
                 if attempt == retry_count - 1:
                     self.logger.error(f"Failed to fetch {url} after {retry_count} attempts.")
-                    return None  # Return None after all retries
+                    return None
                 if isinstance(e, CaptchaException):
                     self.logger.warning("CAPTCHA encountered, attempting to refresh proxy list.")
                 else:
@@ -64,11 +65,11 @@ class Fetcher:
                 except NoProxiesAvailable as e:
                     self.logger.error("Still no proxies available after refresh.")
                     return None
-                proxy = self.proxy_manager.get_random_proxy()  # select another one from the list.
-                proxies = {"http": f"http://{proxy}", "https": f"https://{proxy}"} if proxy else None  # update proxies
+                proxy = self.proxy_manager.get_random_proxy()
+                proxies = {"http://": f"http://{proxy}", "https://": f"https://{proxy}"} if proxy else None  # update proxies
 
             finally:
-                await asyncio.sleep(get_random_delay())  # always delay
+                await asyncio.sleep(get_random_delay())
 
     async def fetch_pages(self, urls):
         """Fetches multiple pages concurrently."""
@@ -79,24 +80,21 @@ class Fetcher:
         """Downloads a PDF file, handling proxies and retries."""
         headers = {"User-Agent": get_random_user_agent()}
         proxy = self.proxy_manager.get_random_proxy()
-        proxies = {"http": f"http://{proxy}", "https": f"https://{proxy}"} if proxy else None  # httpx proxies format
+        proxies = {"http://": f"http://{proxy}", "https://": f"https://{proxy}"} if proxy else None
         retries = 3
         for attempt in range(retries):
             try:
-                async with httpx.AsyncClient(
-                    transport=cache_transport, proxies=proxies, timeout=20
-                ) as client:  # httpx AsyncClient, pass proxies and transport here
-                    response = await client.get(url, headers=headers)
-                    response.raise_for_status()
-                    if response.headers["Content-Type"] == "application/pdf":  # httpx headers
-                        with open(filename, "wb") as f:
-                            f.write(response.content)  # httpx response.content
-                        self.logger.info(f"Downloaded PDF to {filename}")
-                        return True
-                    else:
-                        self.logger.warning(f"URL did not return a PDF: {url}")
-                        return False
-            except (httpx.HTTPError, httpx.RequestError, asyncio.TimeoutError) as e:  # httpx errors
+                response = await self.client.get(url, headers=headers, proxies=proxies, timeout=20)  # Use the cached client
+                response.raise_for_status()
+                if response.headers["Content-Type"] == "application/pdf":
+                    with open(filename, "wb") as f:
+                        f.write(response.content)
+                    self.logger.info(f"Downloaded PDF to {filename}")
+                    return True
+                else:
+                    self.logger.warning(f"URL did not return a PDF: {url}")
+                    return False
+            except (httpx.HTTPError, httpx.RequestError, asyncio.TimeoutError) as e:
                 self.logger.warning(f"Attempt {attempt + 1} to download PDF failed: {e}")
                 if attempt == retries - 1:
                     self.logger.error(f"Failed to download PDF after {retries} attempts.")
@@ -108,18 +106,11 @@ class Fetcher:
                     self.logger.error("Still no proxies available after refresh.")
                     return False
                 proxy = self.proxy_manager.get_random_proxy()
-                proxies = {"http": f"http://{proxy}", "https": f"https://{proxy}"} if proxy else None  # update proxies
+                proxies = {"http://": f"http://{proxy}", "https://": f"https://{proxy}"} if proxy else None  # update proxies
 
     async def scrape_pdf_link(self, doi: str) -> Optional[str]:
-        """
-        Extracts a direct PDF link by scraping the final article webpage.
-
-        Args:
-            paper_url: The initial article URL (could be a DOI link).
-
-        Returns:
-            The direct PDF URL if found, otherwise None.
-        """
+        # ... (The rest of scrape_pdf_link remains the same,
+        #       but use self.client for all httpx requests) ...
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
@@ -133,27 +124,21 @@ class Fetcher:
             pdf_url = None
 
             # --- Unpaywall Check ---
-            async with httpx.AsyncClient(
-                transport=cache_transport, timeout=10
-            ) as client:  # httpx AsyncClient with caching transport
-                response = await client.get(unpaywall_url)
-                response.raise_for_status()
-                data = response.json()
+            response = await self.client.get(unpaywall_url, timeout=10)  # use self.client
+            response.raise_for_status()
+            data = response.json()
 
-                paper_url = data.get("doi_url")
+            paper_url = data.get("doi_url")
 
-                if data.get("is_oa"):
-                    self.logger.info(f"Paper is Open Access according to Unpaywall. DOI: {doi}")
-                else:
-                    self.logger.info(f"Paper is NOT Open Access according to Unpaywall. DOI: {doi}")
+            if data.get("is_oa"):
+                self.logger.info(f"Paper is Open Access according to Unpaywall. DOI: {doi}")
+            else:
+                self.logger.info(f"Paper is NOT Open Access according to Unpaywall. DOI: {doi}")
 
             # Get final redirected URL (important for DOI links)
-            async with httpx.AsyncClient(
-                transport=cache_transport, timeout=20, follow_redirects=True
-            ) as client:  # httpx AsyncClient with caching transport
-                response = await client.get(paper_url, headers=headers)
-                response.raise_for_status()
-                self.logger.info(f"Final URL after redirect: {response.url}")
+            response = await self.client.get(paper_url, headers=headers, follow_redirects=True, timeout=20)  # use self.client
+            response.raise_for_status()
+            self.logger.info(f"Final URL after redirect: {response.url}")
 
             final_url = str(response.url)
             selector = Selector(text=response.text)  # parsel Selector
