@@ -84,9 +84,6 @@ python main.py "deep learning" -a "Yoshua Bengio" -l 2020 --json -o bengio_dl_20
 
 **Dependencies Section:**
 
-```markdown
-## Dependencies
-
 - Python 3.8+
 - [httpx](https://www.python-httpx.org/)
 - [parsel](https://parsel.readthedocs.io/en/latest/)
@@ -94,7 +91,6 @@ python main.py "deep learning" -a "Yoshua Bengio" -l 2020 --json -o bengio_dl_20
 - [fake-useragent](https://pypi.org/project/fake-useragent/)
 - [networkx](https://networkx.org/)
 - [pandas](https://pandas.pydata.org/)
-```
 
 ## Important Disclaimers
 
