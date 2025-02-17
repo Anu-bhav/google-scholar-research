@@ -1,0 +1,8 @@
+httpx
+parsel
+free-proxy
+fake-useragent
+networkx
+pandas
+httpx-caching
+sqlite-utils

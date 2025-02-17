@@ -5,8 +5,14 @@ import httpx  # Changed from aiohttp to httpx
 import logging
 from .exceptions import NoProxiesAvailable
 import random
+from httpx_caching import AsyncCacheControlTransport  # Import httpx-caching
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+# Configure caching transport - using sqlite backend, cache for 1 hour
+cache_transport = AsyncCacheControlTransport(
+    cache_etags=True, storage=httpx_caching.FileCache(cache_dir="proxy_http_cache")
+)  # separate cache for proxy testing
 
 
 class ProxyManager:
@@ -49,7 +55,7 @@ class ProxyManager:
             raise NoProxiesAvailable("No raw proxies found from free-proxy.")
 
         working_proxies = []
-        async with httpx.AsyncClient() as session:  # httpx AsyncClient
+        async with httpx.AsyncClient(transport=cache_transport) as session:  # httpx AsyncClient, pass transport here
             tasks = [self._test_proxy(proxy, session) for proxy in raw_proxies]
             results = await asyncio.gather(*tasks)
 

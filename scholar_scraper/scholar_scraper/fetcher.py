@@ -5,6 +5,7 @@ import re
 from typing import Optional
 
 import httpx  # Changed from aiohttp to httpx
+from httpx_caching import AsyncCacheControlTransport  # Import httpx-caching
 from parsel import Selector  # Keep parsel.Selector
 
 from .exceptions import CaptchaException, NoProxiesAvailable
@@ -12,6 +13,9 @@ from .proxy_manager import ProxyManager
 from .utils import detect_captcha, get_random_delay, get_random_user_agent
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+# Configure caching transport - using sqlite backend, cache for 1 hour
+cache_transport = AsyncCacheControlTransport(cache_etags=True, storage=httpx_caching.FileCache(cache_dir="http_cache"))
 
 
 class Fetcher:
@@ -27,7 +31,9 @@ class Fetcher:
 
         for attempt in range(retry_count):
             try:
-                async with httpx.AsyncClient(proxies=proxies, timeout=10) as client:  # httpx AsyncClient, pass proxies here
+                async with httpx.AsyncClient(
+                    transport=cache_transport, proxies=proxies, timeout=10
+                ) as client:  # httpx AsyncClient, pass proxies and transport here
                     response = await client.get(url, headers=headers)
                     response.raise_for_status()  # Raise HTTPError for bad responses
                     html_content = response.text  # httpx response.text
@@ -77,7 +83,9 @@ class Fetcher:
         retries = 3
         for attempt in range(retries):
             try:
-                async with httpx.AsyncClient(proxies=proxies, timeout=20) as client:  # httpx AsyncClient, pass proxies here
+                async with httpx.AsyncClient(
+                    transport=cache_transport, proxies=proxies, timeout=20
+                ) as client:  # httpx AsyncClient, pass proxies and transport here
                     response = await client.get(url, headers=headers)
                     response.raise_for_status()
                     if response.headers["Content-Type"] == "application/pdf":  # httpx headers
@@ -125,7 +133,9 @@ class Fetcher:
             pdf_url = None
 
             # --- Unpaywall Check ---
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(
+                transport=cache_transport, timeout=10
+            ) as client:  # httpx AsyncClient with caching transport
                 response = await client.get(unpaywall_url)
                 response.raise_for_status()
                 data = response.json()
@@ -138,7 +148,9 @@ class Fetcher:
                     self.logger.info(f"Paper is NOT Open Access according to Unpaywall. DOI: {doi}")
 
             # Get final redirected URL (important for DOI links)
-            async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+            async with httpx.AsyncClient(
+                transport=cache_transport, timeout=20, follow_redirects=True
+            ) as client:  # httpx AsyncClient with caching transport
                 response = await client.get(paper_url, headers=headers)
                 response.raise_for_status()
                 self.logger.info(f"Final URL after redirect: {response.url}")
@@ -269,7 +281,7 @@ class Fetcher:
         self.logger.info(f"Fetching cited-by page (depth {depth}): {url}")
         html_content = await self.fetch_page(url)  # Reuse existing fetch_page
         if html_content:
-            cited_by_results = self.parser.parse_results(html_content)  # parser is not used here anymore.
+            cited_by_results = self.parser.parse_results(html_content)
             for result in cited_by_results:
                 # Add to graph
                 graph_builder.add_citation(result["title"], url, result.get("cited_by_url"))

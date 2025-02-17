@@ -51,10 +51,8 @@
     Alternatively, install them individually:
 
     ```bash
-    pip install httpx parsel free-proxy fake-useragent networkx pandas sqlite-utils
+    pip install httpx parsel free-proxy fake-useragent networkx pandas sqlite-utils httpx-caching
     ```
-
-    _Note: `sqlite-utils` is implicitly used by `requests-cache` which has been removed in the latest version, but it might be useful for database management if you extend the project._
 
 ## Usage
 
