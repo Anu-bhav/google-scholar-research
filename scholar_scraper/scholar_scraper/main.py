@@ -1,5 +1,4 @@
 # scholar_scraper/scholar_scraper/main.py
-# scholar_scraper/scholar_scraper/main.py
 import argparse
 import asyncio
 import logging
@@ -21,59 +20,96 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 
 def usage():
-    """Prints a colorized usage guide to the console."""
-    init(autoreset=True)  # Initialize colorama for cross-platform color support
+    """Prints a comprehensive, colorized usage guide to the console."""
+    init(autoreset=True)
 
     parser = argparse.ArgumentParser(
-        description=f"{Fore.CYAN}ScholarScraper: {Fore.WHITE}A Python tool to scrape Google Scholar efficiently.",
-        formatter_class=argparse.RawTextHelpFormatter,  # To preserve newlines in help text
+        description=f"{Fore.CYAN}ScholarScraper: {Fore.WHITE}A Python tool for efficient and comprehensive scraping of Google Scholar.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(  # Add an epilog for extra information
+            f"{Fore.LIGHTBLACK_EX}Examples:\n"
+            f'  {Fore.MAGENTA}python -m scholar_scraper.main "machine learning"{Style.RESET_ALL}  (Basic search)\n'
+            f'  {Fore.MAGENTA}python -m scholar_scraper.main "deep learning" -a "Yoshua Bengio" -l 2020 --json -o results.json{Style.RESET_ALL}  (Advanced search)\n'
+            f'  {Fore.MAGENTA}python -m scholar_scraper.main "quantum computing" --pdf_dir qc_pdfs -n 50{Style.RESET_ALL}  (Download PDFs)\n\n'
+            f"{Fore.LIGHTBLACK_EX}Notes:\n"
+            f"  * {Fore.CYAN}Always run the script using{Style.RESET_ALL} {Fore.MAGENTA}python -m scholar_scraper.main{Style.RESET_ALL} {Fore.CYAN}to ensure correct package imports.{Style.RESET_ALL}\n"
+            f"  * {Fore.CYAN}Free proxies are used, which may be unreliable. Consider a paid proxy service for production use.{Style.RESET_ALL}\n"
+            f"  * {Fore.CYAN}Be respectful of Google Scholar's Terms of Service and avoid excessive scraping.{Style.RESET_ALL}"
+        ),
     )
-    parser.add_argument("query", help=f"{Fore.YELLOW}The search query.{Style.RESET_ALL}")
-    parser.add_argument("-a", "--authors", help=f"{Fore.YELLOW}Search by author(s).{Style.RESET_ALL}", default=None)
-    parser.add_argument("-p", "--publication", help=f"{Fore.YELLOW}Search by publication.{Style.RESET_ALL}", default=None)
-    parser.add_argument(
-        "-l", "--year_low", type=int, help=f"{Fore.YELLOW}The lower bound of the year range.{Style.RESET_ALL}", default=None
+
+    # --- Positional Arguments ---
+    positional_group = parser.add_argument_group(f"{Fore.GREEN}Positional Arguments{Style.RESET_ALL}")
+    positional_group.add_argument(
+        "query",
+        help=f"{Fore.YELLOW}The search query (REQUIRED).{Style.RESET_ALL}  Enclose in quotes for multi-word queries.",
     )
-    parser.add_argument(
-        "-u", "--year_high", type=int, help=f"{Fore.YELLOW}The upper bound of the year range.{Style.RESET_ALL}", default=None
+
+    # --- Optional Arguments ---
+    optional_group = parser.add_argument_group(f"{Fore.GREEN}Optional Arguments{Style.RESET_ALL}")
+    optional_group.add_argument(
+        "-a",
+        "--authors",
+        help=f'{Fore.YELLOW}Search for publications by specific author(s).{Style.RESET_ALL} Separate multiple authors with commas (e.g., "Yann LeCun, Yoshua Bengio").',
+        default=None,
     )
-    parser.add_argument(
+    optional_group.add_argument(
+        "-p",
+        "--publication",
+        help=f'{Fore.YELLOW}Search within a specific publication (e.g., "Nature", "Science").{Style.RESET_ALL}',
+        default=None,
+    )
+    optional_group.add_argument(
+        "-l",
+        "--year_low",
+        type=int,
+        help=f"{Fore.YELLOW}The lower bound of the publication year range (inclusive).{Style.RESET_ALL}",
+        default=None,
+    )
+    optional_group.add_argument(
+        "-u",
+        "--year_high",
+        type=int,
+        help=f"{Fore.YELLOW}The upper bound of the publication year range (inclusive).{Style.RESET_ALL}",
+        default=None,
+    )
+    optional_group.add_argument(
         "-n",
         "--num_results",
         type=int,
         default=10,
         help=f"{Fore.YELLOW}The maximum number of results to retrieve.{Style.RESET_ALL} (default: 10)",
     )
-    parser.add_argument(
-        "-o", "--output", default="results.csv", help=f"{Fore.YELLOW}Output file name.{Style.RESET_ALL} (default: results.csv)"
+    optional_group.add_argument(
+        "-o",
+        "--output",
+        default="results.csv",
+        help=f"{Fore.YELLOW}Output file name.{Style.RESET_ALL} (default: results.csv).  File extension determines format (CSV or JSON).",
     )
-    parser.add_argument(
-        "--json", action="store_true", help=f"{Fore.YELLOW}Output in JSON format.{Style.RESET_ALL} (default: CSV)"
+    optional_group.add_argument(
+        "--json",
+        action="store_true",
+        help=f"{Fore.YELLOW}Output results in JSON format.{Style.RESET_ALL} (default: CSV).  Overrides file extension if both are provided.",
     )
-    parser.add_argument(
-        "--pdf_dir", default="pdfs", help=f"{Fore.YELLOW}Directory to save downloaded PDFs.{Style.RESET_ALL} (default: pdfs)"
+    optional_group.add_argument(
+        "--pdf_dir",
+        default="pdfs",
+        help=f"{Fore.YELLOW}Directory to save downloaded PDFs.{Style.RESET_ALL} (default: pdfs).  The directory will be created if it doesn't exist.",
     )
-    parser.add_argument(
+    optional_group.add_argument(
         "--max_depth",
         type=int,
         default=3,
-        help=f"{Fore.YELLOW}Maximum recursion depth for citation network scraping.{Style.RESET_ALL} (default: 3)",
+        help=f"{Fore.YELLOW}Maximum recursion depth for citation network scraping.{Style.RESET_ALL} (default: 3).  Higher values may result in more comprehensive citation networks but also more requests.",
     )
 
-    help_text = parser.format_help()
-
-    # Customize and colorize the help text further
-    colored_help = help_text.replace("usage:", f"{Fore.GREEN}Usage:{Style.RESET_ALL}")
-    colored_help = colored_help.replace("positional arguments:", f"{Fore.GREEN}Positional Arguments:{Style.RESET_ALL}")
-    colored_help = colored_help.replace("optional arguments:", f"{Fore.GREEN}Optional Arguments:{Style.RESET_ALL}")
-
-    print(colored_help)
+    # --- Output the formatted help ---
+    print(parser.format_help())
 
 
 async def main():
-    # Argument parsing
+    # Argument parsing:  Define arguments ONLY ONCE, here in main().
     parser = argparse.ArgumentParser(description="Scrape Google Scholar search results.")
-    parser.add_argument("-h", "--help", action="help", help="Show this help message and exit")
     parser.add_argument("query", help="The search query.")
     parser.add_argument("-a", "--authors", help="Search by author(s).", default=None)
     parser.add_argument("-p", "--publication", help="Search by publication.", default=None)
@@ -81,16 +117,13 @@ async def main():
     parser.add_argument("-u", "--year_high", type=int, help="The upper bound of the year range.", default=None)
     parser.add_argument("-n", "--num_results", type=int, default=10, help="The maximum number of results to retrieve.")
     parser.add_argument("-o", "--output", default="results.csv", help="Output file name (CSV or JSON).")
-    parser.add_argument("--json", action="store_true", help="Output in JSON format (default is CSV).")  # use a flag
-    parser.add_argument("--pdf_dir", default="pdfs", help="Directory to save downloaded PDFs.")  # pdf dir
-    parser.add_argument(
-        "--max_depth", type=int, default=3, help="Maximum recursion depth for citation network scraping."
-    )  # depth for citation
-    args = parser.parse_args()
+    parser.add_argument("--json", action="store_true", help="Output in JSON format (default is CSV).")
+    parser.add_argument("--pdf_dir", default="pdfs", help="Directory to save downloaded PDFs.")
+    parser.add_argument("--max_depth", type=int, default=3, help="Maximum recursion depth for citation network scraping.")
+    # Let argparse handle -h/--help automatically:
+    args = parser.parse_args()  # Parse arguments ONLY ONCE, here.
 
-    if args.help:  # No need to check args.help directly when using action="help"
-        usage()  # call usage function
-        sys.exit(0)  # exit after showing usage.
+    # Removed the if args.help check, argparse will exit.
 
     query_builder = QueryBuilder()
     proxy_manager = ProxyManager()
