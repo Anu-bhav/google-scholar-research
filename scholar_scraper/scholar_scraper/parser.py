@@ -1,11 +1,14 @@
 # scholar_scraper/scholar_scraper/parser.py
-from .exceptions import ParsingException
-import re
 import logging
+import re
+
 from parsel import Selector  # Import Selector from parsel
 
+from .exceptions import ParsingException
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    format="%(asctime)s | %(levelname)s | %(filename)s:%(lineno)d | %(funcName)s | %(message)s", level=logging.DEBUG
+)
 
 
 class Parser:

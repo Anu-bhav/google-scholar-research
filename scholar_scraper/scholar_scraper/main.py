@@ -16,7 +16,9 @@ from .parser import Parser
 from .proxy_manager import ProxyManager
 from .query_builder import QueryBuilder
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    format="%(asctime)s | %(levelname)s | %(filename)s:%(lineno)d | %(funcName)s | %(message)s",
+    level=logging.DEBUG)
 
 
 def usage():

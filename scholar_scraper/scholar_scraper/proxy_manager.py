@@ -4,12 +4,13 @@ import logging
 import random
 
 import httpx
-import httpx_caching  # Import the library
 from fp.fp import FreeProxy
 
 from .exceptions import NoProxiesAvailable
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    format="%(asctime)s | %(levelname)s | %(filename)s:%(lineno)d | %(funcName)s | %(message)s", level=logging.DEBUG
+)
 
 
 class ProxyManager:
@@ -18,23 +19,25 @@ class ProxyManager:
         self.proxy_list = []
         self.check_anonymity = check_anonymity
         self.logger = logging.getLogger(__name__)
-        self.client = self._create_client()  # Create a cached client here as well
+        self.client = self._create_client()
 
-    def _create_client(self):
+    def _create_client(self, proxy=None):
         """Creates an httpx.AsyncClient with caching enabled."""
-        return httpx_caching.AsyncClient(
-            mounts={"https://": httpx_caching.AsyncCacheControl(cacheable_methods=["GET"]), "http://": httpx.AsyncTransport()},
-            cache=httpx_caching.FileCache(cache_dir="proxy_http_cache"),
+        return httpx.AsyncClient(
+            mounts={
+                "https://": httpx.AsyncHTTPTransport(proxy=f"https://{proxy}"),
+                "http://": httpx.AsyncHTTPTransport(proxy=f"http://{proxy}"),
+            },
         )
 
-    async def _test_proxy(self, proxy):  # No session argument needed
+    async def _test_proxy(self, proxy):
         """Tests a single proxy for speed and anonymity."""
-        test_url = "https://www.google.com"
+        test_url = "https://httpbin.org/ip"
         try:
             start_time = asyncio.get_event_loop().time()
-            response = await self.client.get(
-                test_url, proxies={"http://": f"http://{proxy}", "https://": f"https://{proxy}"}, timeout=5
-            )  # Use self.client
+            # Use self.client (the cached client)
+            self.client = self._create_client(proxy)
+            response = await self.client.get(test_url, timeout=5)
             response.raise_for_status()
             end_time = asyncio.get_event_loop().time()
             latency = end_time - start_time
@@ -43,7 +46,7 @@ class ProxyManager:
                 if "X-Forwarded-For" in response.headers or "Via" in response.headers:
                     anonymity = "Transparent"
                 else:
-                    anonymity = "Anonymous"  # Could also be Elite, but hard to distinguish
+                    anonymity = "Anonymous"  # Could also be Elite, hard to distinguish
             else:
                 anonymity = "Unknown"
             return proxy, latency, anonymity
@@ -53,12 +56,12 @@ class ProxyManager:
 
     async def get_working_proxies(self, num_proxies=10):
         """Gets a list of working proxies, testing for speed and anonymity."""
-        raw_proxies = self.fp.get_proxy_list()
+        raw_proxies = self.fp.get_proxy_list(repeat=True)
         if not raw_proxies:
             raise NoProxiesAvailable("No raw proxies found from free-proxy.")
 
         working_proxies = []
-        tasks = [self._test_proxy(proxy) for proxy in raw_proxies]  # No session needed
+        tasks = [self._test_proxy(proxy) for proxy in raw_proxies]
         results = await asyncio.gather(*tasks)
 
         for proxy, latency, anonymity in results:

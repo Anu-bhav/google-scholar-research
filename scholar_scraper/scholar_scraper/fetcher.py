@@ -1,47 +1,40 @@
-# scholar_scraper/scholar_scraper/fetcher.py
 import asyncio
-from .utils import get_random_user_agent, get_random_delay, detect_captcha
-from .proxy_manager import ProxyManager
-from .exceptions import CaptchaException, NoProxiesAvailable
 import logging
 import re
-from parsel import Selector
 from typing import Optional
-import httpx
-import httpx_caching  # Import the library, but not a specific class
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+import hishel  # Import Hishel
+import httpx
+from parsel import Selector
+
+from .exceptions import CaptchaException, NoProxiesAvailable
+from .proxy_manager import ProxyManager
+from .utils import detect_captcha, get_random_delay, get_random_user_agent
+
+logging.basicConfig(
+    format="%(asctime)s | %(levelname)s | %(filename)s:%(lineno)d | %(funcName)s | %(message)s", level=logging.DEBUG
+)
 
 
 class Fetcher:
     def __init__(self, proxy_manager=None):
         self.proxy_manager = proxy_manager or ProxyManager()
         self.logger = logging.getLogger(__name__)
-        self.client = self._create_client()  # Create a client with caching
+        self.client = self._create_client()  # Create cached client
 
     def _create_client(self):
         """Creates an httpx.AsyncClient with caching enabled."""
-        return httpx_caching.AsyncClient(
-            mounts={
-                "https://": httpx_caching.AsyncCacheControl(
-                    cacheable_methods=["GET"]
-                ),  # Cache only GET requests, and only on https
-                "http://": httpx.AsyncTransport(),  # bypass cache on http
-            },
-            cache=httpx_caching.FileCache(cache_dir="http_cache"),  # set location
-        )
+        transport = hishel.AsyncCacheTransport(transport=httpx.AsyncHTTPTransport())
+        return hishel.AsyncCacheClient(transport=transport)
 
     async def fetch_page(self, url, retry_count=3, retry_delay=10):
-        """Fetches a single page asynchronously, with retries and proxy rotation."""
         headers = {"User-Agent": get_random_user_agent()}
         proxy = self.proxy_manager.get_random_proxy()
         proxies = {"http://": f"http://{proxy}", "https://": f"https://{proxy}"} if proxy else None
 
         for attempt in range(retry_count):
             try:
-                response = await self.client.get(
-                    url, headers=headers, proxies=proxies, timeout=10
-                )  # Use the pre-configured client
+                response = await self.client.get(url, headers=headers, proxies=proxies, timeout=10)
                 response.raise_for_status()
                 html_content = response.text
                 if detect_captcha(html_content):
@@ -61,30 +54,28 @@ class Fetcher:
                     self.logger.info(f"Retrying in {retry_delay} seconds...")
                 await asyncio.sleep(retry_delay)
                 try:
-                    await self.proxy_manager.get_working_proxies()  # refresh proxy list
+                    await self.proxy_manager.get_working_proxies()
                 except NoProxiesAvailable as e:
                     self.logger.error("Still no proxies available after refresh.")
                     return None
                 proxy = self.proxy_manager.get_random_proxy()
-                proxies = {"http://": f"http://{proxy}", "https://": f"https://{proxy}"} if proxy else None  # update proxies
+                proxies = {"http://": f"http://{proxy}", "https://": f"https://{proxy}"} if proxy else None
 
             finally:
                 await asyncio.sleep(get_random_delay())
 
     async def fetch_pages(self, urls):
-        """Fetches multiple pages concurrently."""
         tasks = [self.fetch_page(url) for url in urls]
         return await asyncio.gather(*tasks)
 
     async def download_pdf(self, url, filename):
-        """Downloads a PDF file, handling proxies and retries."""
         headers = {"User-Agent": get_random_user_agent()}
         proxy = self.proxy_manager.get_random_proxy()
         proxies = {"http://": f"http://{proxy}", "https://": f"https://{proxy}"} if proxy else None
         retries = 3
         for attempt in range(retries):
             try:
-                response = await self.client.get(url, headers=headers, proxies=proxies, timeout=20)  # Use the cached client
+                response = await self.client.get(url, headers=headers, proxies=proxies, timeout=20)
                 response.raise_for_status()
                 if response.headers["Content-Type"] == "application/pdf":
                     with open(filename, "wb") as f:
@@ -99,32 +90,31 @@ class Fetcher:
                 if attempt == retries - 1:
                     self.logger.error(f"Failed to download PDF after {retries} attempts.")
                     return False
-                await asyncio.sleep(get_random_delay(10, 20))  # Longer delay for PDF downloads
+                await asyncio.sleep(get_random_delay(10, 20))  # Longer delay
                 try:
-                    await self.proxy_manager.get_working_proxies()  # refresh proxy list
+                    await self.proxy_manager.get_working_proxies()
                 except NoProxiesAvailable as e:
                     self.logger.error("Still no proxies available after refresh.")
                     return False
                 proxy = self.proxy_manager.get_random_proxy()
-                proxies = {"http://": f"http://{proxy}", "https://": f"https://{proxy}"} if proxy else None  # update proxies
+                proxies = {"http://": f"http://{proxy}", "https://": f"https://{proxy}"} if proxy else None
 
     async def scrape_pdf_link(self, doi: str) -> Optional[str]:
-        # ... (The rest of scrape_pdf_link remains the same,
-        #       but use self.client for all httpx requests) ...
+        # ... (The rest of scrape_pdf_link remains almost the same.
+        #       Just use self.client for all httpx requests)
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "Referer": "https://scholar.google.com",  # Some sites require a referrer
+            "Referer": "https://scholar.google.com",
         }
 
-        # got most of the patterns from here from reverse engineering the unpaywall chrome extension
         unpaywall_url = f"https://api.unpaywall.org/v2/{doi}?email=unpaywall@impactstory.org"
 
         try:
             pdf_url = None
 
             # --- Unpaywall Check ---
-            response = await self.client.get(unpaywall_url, timeout=10)  # use self.client
+            response = await self.client.get(unpaywall_url, timeout=10)  # Use self.client
             response.raise_for_status()
             data = response.json()
 
@@ -135,13 +125,13 @@ class Fetcher:
             else:
                 self.logger.info(f"Paper is NOT Open Access according to Unpaywall. DOI: {doi}")
 
-            # Get final redirected URL (important for DOI links)
-            response = await self.client.get(paper_url, headers=headers, follow_redirects=True, timeout=20)  # use self.client
+            # Get final redirected URL
+            response = await self.client.get(paper_url, headers=headers, follow_redirects=True, timeout=20)  # Use self.client
             response.raise_for_status()
             self.logger.info(f"Final URL after redirect: {response.url}")
 
             final_url = str(response.url)
-            selector = Selector(text=response.text)  # parsel Selector
+            selector = Selector(text=response.text)
 
             # --- Meta Tag Check ---
             meta_pdf_url = selector.xpath("//meta[@name='citation_pdf_url']/@content").get()
@@ -210,9 +200,6 @@ class Fetcher:
                     return pdf_url
 
             # --- General PDF Pattern Check (Fallback) ---
-            # use the last 3 characters of the DOI to match the link because it's a commmon pattern
-            # for it to be included in the URL. This is to avoid false positives.
-            # Not always the case though.
             doi_last_3 = doi[-3:] if len(doi) >= 3 else doi
             PDF_PATTERNS = [
                 ".pdf",
@@ -227,17 +214,15 @@ class Fetcher:
                 "/articles/",
                 "/doi/pdf/",
             ]
-            pdf_links = selector.css("a::attr(href)").getall()  # get all links here to loop through
+            pdf_links = selector.css("a::attr(href)").getall()
 
-            for link in pdf_links:  # loop through
+            for link in pdf_links:
                 if any(pattern in link.lower() for pattern in PDF_PATTERNS):
-                    # check if any of the patterns are in the link and the doi_last_3 is in the link
                     if doi_last_3 in link.lower():
                         pdf_url = httpx.URL(final_url).join(link).unicode_string()
                         self.logger.info(f"Found PDF link (General Pattern): {pdf_url}")
                         return str(pdf_url)
 
-                    # if the doi_last_3 is not in the link, check if the link is a pdf, do this as final.
                     pdf_url = httpx.URL(final_url).join(link).unicode_string()
                     self.logger.info(f"Found PDF link (General Pattern): {pdf_url}")
                     return str(pdf_url)
