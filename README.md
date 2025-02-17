@@ -83,16 +83,6 @@ The following options can be used to customize your search and output:
 python main.py "deep learning" -a "Yoshua Bengio" -l 2020 --json -o bengio_dl_2020.json --pdf_dir bengio_pdfs -n 30
 ```
 
-**Dependencies Section:**
-
-- Python 3.8+
-- [httpx](https://www.python-httpx.org/)
-- [parsel](https://parsel.readthedocs.io/en/latest/)
-- [free-proxy](https://pypi.org/project/free-proxy/)
-- [fake-useragent](https://pypi.org/project/fake-useragent/)
-- [networkx](https://networkx.org/)
-- [pandas](https://pandas.pydata.org/)
-
 ## Important Disclaimers
 
 - **Terms of Service:** Scraping Google Scholar may violate their Terms of Service. Use this tool responsibly and at your own risk. Be aware that Google may block your IP address if you scrape too aggressively.
