@@ -5,6 +5,9 @@
 
 **Python tool to scrape Google Scholar efficiently. Features include: keyword search, PDF downloading (with DOI and fallback methods), citation network extraction, proxy rotation, and data export (CSV/JSON). Built with asyncio, httpx, and parsel.**
 
+> [!WARNING]
+> This project is currently in a state of "mostly functional," kind of like a slightly wonky robot butler – it _usually_ does what you ask, but sometimes it might bring you a sock instead of a cup of tea. This was also put together during a caffeine-fueled weekend, so please don't have _too_ high of expectations. Bug reports are greatly appreciated (and will be rewarded with virtual high-fives)!
+
 ## Features
 
 - **Google Scholar Scraping:** Extracts search results for given queries from Google Scholar.
@@ -29,9 +32,6 @@
 - **Data Export:** Saves scraped data in CSV or JSON format.
 - **Incremental Scraping:** Basic support to avoid re-scraping already retrieved results using a SQLite database.
 - **Command-Line Interface (CLI):** User-friendly command-line interface for running scrapes with various options.
-
-> [!WARNING]
-> This project is currently in a state of "mostly functional," kind of like a slightly wonky robot butler – it _usually_ does what you ask, but sometimes it might bring you a sock instead of a cup of tea. This was also put together during a caffeine-fueled weekend, so please don't have _too_ high of expectations. Bug reports are greatly appreciated (and will be rewarded with virtual high-fives)!
 
 ## Installation
 
