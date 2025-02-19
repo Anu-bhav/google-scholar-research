@@ -1,100 +1,172 @@
-# Google Scholar Scraper (Research Tool)
+# Google Scholar Research Tool 🚀🎓
 
 [![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-**Python tool to scrape Google Scholar efficiently. Features include: keyword search, PDF downloading (with DOI and fallback methods), citation network extraction, proxy rotation, and data export (CSV/JSON). Built with asyncio, httpx, and parsel.**
+**A research tool for efficiently gathering and analyzing data from Google Scholar. With advanced search, including publications, citations, author profiles and other features like PDF downloads, citation analysis, and proxy rotation (CAPTCHAs Bypass). ⚡️**
 
 > [!WARNING]
 > This project is currently in a state of "mostly functional," kind of like a slightly wonky robot butler – it _usually_ does what you ask, but sometimes it might bring you a sock instead of a cup of tea. This was also put together during a caffeine-fueled weekend, so please don't have _too_ high of expectations. Bug reports are greatly appreciated (and will be rewarded with virtual high-fives)!
 
-## Features
+## ✨ Features
 
-- **Google Scholar Scraping:** Extracts search results for given queries from Google Scholar.
-- **Advanced Search Parameters:** Supports searching by keywords, authors, publication names, and year ranges.
-- **Data Extraction:** Parses and extracts key information from search results, including:
-  - Title
-  - Authors
-  - Publication Information (venue, year)
-  - Snippet/Abstract
-  - Cited-by Count and Link
-  - Related Articles Link
-  - Article URL
-  - DOI (if available)
-  - Author Affiliations (basic extraction)
+- **Comprehensive Google Scholar Scraping:** Extract detailed search results, going beyond basic information.
+- **Advanced Search:** Refine your searches with precision:
+  - Keywords 🔎
+  - Authors 🧑‍🔬
+  - Publications 📰
+  - Year Ranges 📅
+  - Exact Phrases 💬
+  - Keyword Exclusion 🚫
+  - Field-Specific Searches (title, author, source) 🎯
+  - Minimum Citation Count Filtering ⭐
+- **Author Profile Scraping:** Dive deep into an author's work:
+  - Fetch author details (name, affiliation, interests).
+  - List co-authors.
+  - Retrieve key metrics (total citations, h-index, i10-index).
+  - Extract a list of publications.
+  - _Optional:_ Recursive scraping of publication details.
 - **PDF Downloading:**
-  - Attempts to download PDFs using DOI and Unpaywall API for Open Access papers.
-  - Fallback PDF extraction directly from publisher pages for non-DOI papers.
-  - Saves downloaded PDFs to a specified directory.
-- **Citation Network Building:** Extracts citation information and builds a basic citation network graph using `networkx`.
-- **Proxy Rotation:** Integrates with `free-proxy` library to rotate through free proxies for scraping (note: free proxies are unreliable for production use).
-- **Asynchronous Scraping:** Uses `asyncio` and `httpx` for efficient and fast scraping.
-- **Data Export:** Saves scraped data in CSV or JSON format.
-- **Incremental Scraping:** Basic support to avoid re-scraping already retrieved results using a SQLite database.
-- **Command-Line Interface (CLI):** User-friendly command-line interface for running scrapes with various options.
+  - Prioritizes Open Access papers via Unpaywall API.
+  - Intelligent fallback to direct publisher page scraping.
+  - Organized PDF storage.
+- **Citation Network Analysis:**
+  - Builds a citation graph to visualize research connections.
+  - Configurable depth for citation exploration.
+- **Robustness and Reliability:**
+  - **Smart Proxy Rotation:** Automatically switches proxies on failures (429, 403, connection errors).
+  - **CAPTCHA Detection:** Identifies CAPTCHAs and pauses to avoid getting blocked.
+  - **Error Handling:** Gracefully handles various network and parsing issues.
+- **Performance:**
+  - **Asynchronous Operations:** Uses `asyncio` and `aiohttp` for high concurrency.
+  - **Rate Limiting:** Built-in delays to respect Google Scholar's servers.
+- **Data Management:**
+  - **Database Integration:** Stores scraped data in an SQLite database to prevent duplicates.
+  - **Flexible Output:** Export results to CSV or JSON.
+- **User-Friendly CLI:** Easy-to-use command-line interface with clear options.
+- **Progress Tracking:** Real-time progress bar with insightful statistics:
+  - Requests per Second (RPS) 📈
+  - Success/Failure Rates ✅/❌
+  - Proxy Usage and Removal 🔄
+  - PDF Download Count ⬇️
+  - Estimated Time Remaining (ETR) ⏱️
+- **Modular Design:** Well-structured code for easy maintenance and extension.
 
-## Installation
+## 🛠️ Installation
 
-**Clone the repository:**
+1.  **Clone the repository:**
 
     ```bash
-    git clone [repository URL]
+    git clone [repository URL]  # Replace with your repo URL
     cd scholar_scraper
     ```
 
-**Install dependencies:**
+2.  **Create and activate a virtual environment (recommended):**
+
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
+
+3.  **Install dependencies:**
 
     ```bash
     pip install -r requirements.txt
     ```
 
-    Alternatively, install them individually:
+    Or install them individually:
 
     ```bash
-    pip install httpx parsel free-proxy fake-useragent networkx pandas sqlite-utils httpx-caching
+    pip install aiohttp aiosqlite networkx pandas colorama fake-useragent parsel fp tqdm
     ```
 
-## Usage
+## 🚀 Usage
 
-Run `main.py` from the command line with your search query and options.
-
-```bash
-python main.py "<search query>" [options]
-```
-
-**Options:**
-
-The following options can be used to customize your search and output:
-
-- `query`: The search query you want to use (required, first argument).
-- `-a` or `--authors`: Search for publications by specific author(s).
-- `-p` or `--publication`: Search within a specific publication.
-- `-l` or `--year_low`: Lower bound of the publication year range.
-- `-u` or `--year_high`: Upper bound of the publication year range.
-- `-n` or `--num_results`: Maximum number of results to retrieve (default: 10).
-- `-o` or `--output`: Output file name (default: `results.csv`).
-- `--json`: Output results in JSON format instead of CSV.
-- `--pdf_dir`: Directory to save downloaded PDFs (default: `pdfs`).
-- `--max_depth`: Maximum recursion depth for citation network scraping (default: 3).
-
-## Example with more options:
+Run the scraper from the command line:
 
 ```bash
-python main.py "deep learning" -a "Yoshua Bengio" -l 2020 --json -o bengio_dl_2020.json --pdf_dir bengio_pdfs -n 30
+python scholar_scraper.py "<search query>" [options]
 ```
 
-## Important Disclaimers
+**Available Options:**
 
-- **Terms of Service:** Scraping Google Scholar may violate their Terms of Service. Use this tool responsibly and at your own risk. Be aware that Google may block your IP address if you scrape too aggressively.
-- **CAPTCHA:** Google Scholar employs CAPTCHAs to prevent bot activity. This scraper includes basic CAPTCHA detection, but bypassing CAPTCHAs reliably is very challenging and may be against Google's terms. You may encounter CAPTCHAs, especially with frequent use.
-- **Free Proxies:** This tool uses free proxies, which are unreliable and often slow. For serious or large-scale scraping, consider using a reputable paid proxy service. Free proxies may expose your IP address or fail frequently.
-- **Ethical Use:** Respect copyright and use scraped data ethically. Do not redistribute copyrighted material without permission. Use this tool for research, personal study, or purposes that comply with copyright law and website terms of service.
-- **Rate Limiting:** The scraper includes delays between requests to be somewhat respectful of Google Scholar's servers. However, you may still need to adjust the scraping speed and delays depending on your needs and Google's rate limiting policies.
+| Option             | Short | Description                                                                           |         Default          |
+| :----------------- | :---: | :------------------------------------------------------------------------------------ | :----------------------: |
+| `<search query>`   |       | The main search query (keywords). Required unless `--author_profile` is used.         |                          |
+| `--authors`        | `-a`  | Search for publications by specific author(s).                                        |          `None`          |
+| `--publication`    | `-p`  | Search within a specific publication.                                                 |          `None`          |
+| `--year_low`       | `-l`  | Lower bound of the publication year range.                                            |          `None`          |
+| `--year_high`      | `-u`  | Upper bound of the publication year range.                                            |          `None`          |
+| `--num_results`    | `-n`  | Maximum number of results to retrieve.                                                |           `10`           |
+| `--output`         | `-o`  | Output file name (CSV or JSON).                                                       |      `results.csv`       |
+| `--json`           |       | Output results in JSON format instead of CSV.                                         |         `False`          |
+| `--pdf_dir`        |       | Directory to save downloaded PDFs.                                                    |          `pdfs`          |
+| `--max_depth`      |       | Maximum recursion depth for citation network scraping.                                |           `3`            |
+| `--graph_file`     |       | File name to save the citation network graph (GraphML format).                        | `citation_graph.graphml` |
+| `--phrase`         |       | Search for an exact phrase.                                                           |          `None`          |
+| `--exclude`        |       | Exclude keywords (comma-separated).                                                   |          `None`          |
+| `--title`          |       | Search within the title.                                                              |          `None`          |
+| `--author`         |       | Search within the author field.                                                       |          `None`          |
+| `--source`         |       | Search within the source (publication).                                               |          `None`          |
+| `--min_citations`  |       | Filter results: only include those with at least this many citations.                 |          `None`          |
+| `--author_profile` |       | Scrape an author's profile using their Google Scholar ID.                             |          `None`          |
+| `--recursive`      |       | Recursively scrape publications on an author's profile (requires `--author_profile`). |         `False`          |
 
-## License
+**Examples:**
+
+- Basic keyword search:
+
+  ```bash
+  python scholar_scraper.py "machine learning"
+  ```
+
+  - Scrape author profile:
+
+  ```bash
+   python scholar_scraper.py --author_profile "Yoshua Bengio" --output "yoshua_bengio.json" --json
+  ```
+
+- Search with author and year range, output to JSON:
+
+  ```bash
+  python scholar_scraper.py "deep learning" -a "Yoshua Bengio" -l 2020 --json -o bengio_dl_2020.json
+  ```
+
+- Search with phrase, exclusion, and title constraints:
+
+  ```bash
+  python scholar_scraper.py --phrase "generative adversarial networks" --exclude "image processing" --title "GANs in healthcare" -n 50
+  ```
+
+**Section 5: Important Considerations, License, Acknowledgements, Contributing, and Disclaimer**
+
+## ⚠️ Important Considerations
+
+- **Terms of Service:** Scraping Google Scholar may violate their Terms of Service. Use this tool responsibly and ethically. Google may block your IP address if you scrape too aggressively.
+- **CAPTCHA:** Google Scholar uses CAPTCHAs. This scraper has basic detection, but bypassing them reliably is difficult. Expect to encounter CAPTCHAs, especially with frequent or large-scale scraping.
+- **Proxies:** This tool uses _free_ proxies, which are often unreliable. For production use, _strongly_ consider using a reputable paid proxy service.
+- **Rate Limiting:** The scraper includes delays to be respectful, but you may need to adjust the timing (`--min_delay`, `--max_delay` - _not yet implemented as CLI options, but present in code_) based on your usage.
+
+## 📜 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+## 🙏 Acknowledgements
+
+- [aiohttp](https://docs.aiohttp.org/): Asynchronous HTTP client.
+- [aiosqlite](https://aiosqlite.omnilib.dev/): Asynchronous SQLite wrapper.
+- [parsel](https://parsel.readthedocs.io/): HTML/XML parsing library.
+- [networkx](https://networkx.org/): Library for creating and manipulating graphs.
+- [tqdm](https://tqdm.github.io/): Progress bar library.
+- [fake-useragent](https://github.com/fake-useragent/fake-useragent): Generates random user agents.
+- [free-proxy](https://github.com/howuku/free-proxy): For fetching free proxies. (Consider replacing with a paid service for production)
+- [Unpaywall](https://unpaywall.org/): For locating Open Access versions.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please submit issues and pull requests. Follow the [black](https://github.com/psf/black) code style.
+
 ---
 
-**Disclaimer:** This tool is provided for educational and research purposes only. The author is not responsible for any misuse or consequences arising from the use of this software. Always use web scraping tools responsibly and ethically.
+**Disclaimer:** This tool is for educational and research purposes. The author is not responsible for misuse. Always respect website terms of service and copyright laws.

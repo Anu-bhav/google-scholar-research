@@ -1,4 +1,4 @@
-# scholar_scraper/scholar_scraper/exceptions.py
+# exceptions.py
 class CaptchaException(Exception):
     """Raised when a CAPTCHA is detected."""
 
@@ -12,6 +12,6 @@ class ParsingException(Exception):
 
 
 class NoProxiesAvailable(Exception):
-    """Raised when no working proxies are found"""
+    """Raised when no working proxies are found."""
 
     pass

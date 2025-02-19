@@ -1,17 +1,15 @@
-# scholar_scraper/scholar_scraper/proxy_manager.py
+# proxy_manager.py
 import asyncio
 import logging
 import random
 import time
+import urllib.parse
 from typing import List, Optional
-from urllib.parse import urlparse
 
 import aiohttp
+from exceptions import NoProxiesAvailable
 from fp.fp import FreeProxy
-
-from .exceptions import NoProxiesAvailable
-
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+from models import ProxyErrorType
 
 
 class ProxyManager:
@@ -35,7 +33,7 @@ class ProxyManager:
         proxy_url = f"http://{proxy}"
         timeout = aiohttp.ClientTimeout(total=self.timeout)
         connect_url = self.test_url
-        parsed_url = urlparse(connect_url)
+        parsed_url = urllib.parse.urlparse(connect_url)
         connect_host = parsed_url.hostname
         connect_port = parsed_url.port if parsed_url.port else 443
 
@@ -100,11 +98,11 @@ class ProxyManager:
         """Force refresh the proxy list."""
         await self.get_working_proxies()
 
-    def get_random_proxy(self) -> Optional[str]:
+    async def get_random_proxy(self) -> Optional[str]:
         """Return a random working proxy."""
         try:
             if not self.proxy_list:
-                asyncio.run(self.refresh_proxies())  # Blocks the calling method.
+                await self.refresh_proxies()
             return random.choice(self.proxy_list) if self.proxy_list else None
         except NoProxiesAvailable:
             return None
