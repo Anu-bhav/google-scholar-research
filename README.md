@@ -2,12 +2,12 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Google Scholar](https://img.shields.io/badge/Google%20Scholar-blue)(https://scholar.google.com/)]
 
 **A research tool for efficiently gathering and analyzing data from Google Scholar. With advanced search, including publications, citations, author profiles and other features like PDF downloads, citation analysis, and proxy rotation (CAPTCHAs Bypass). ⚡️**
 
 > [!WARNING]
-> This project is currently in a state of "mostly functional," kind of like a slightly wonky robot butler – it _usually_ does what you ask, but sometimes it might bring you a sock instead of a cup of tea. This was also put together during a caffeine-fueled weekend, so please don't have _too_ high of expectations. Bug reports are greatly appreciated (and will be rewarded with virtual high-fives)!
+> This project is currently in a state of "mostly functional," kind of like a slightly wonky robot butler – it _usually_ does what you ask, but sometimes it might bring you a sock instead of a cup of tea. This was also put together during a caffeine-fueled weekend, so please don't have _too_ high of expectations. It's still WIP. Bug reports are greatly appreciated (and will be rewarded with virtual high-fives)!
 
 ## ✨ Features
 
@@ -58,7 +58,7 @@
 1.  **Clone the repository:**
 
     ```bash
-    git clone [[repository URL]](https://github.com/Anu-bhav/google-scholar-research)
+    git clone https://github.com/Anu-bhav/google-scholar-research
     cd google-scholar-research
     ```
 

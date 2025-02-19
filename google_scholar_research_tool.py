@@ -1,4 +1,4 @@
-# scholar_scraper.py
+# google_scholar_research_tool.py
 import argparse
 import asyncio
 import json
@@ -8,8 +8,6 @@ import random
 import re
 import sqlite3
 import time
-
-# query_builder.py
 import urllib.parse
 from enum import Enum, auto
 from typing import Dict, List, Optional
