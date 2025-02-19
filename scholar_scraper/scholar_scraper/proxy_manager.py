@@ -2,80 +2,116 @@
 import asyncio
 import logging
 import random
+import time
+from typing import List, Optional
+from urllib.parse import urlparse
 
-import httpx
+import aiohttp
 from fp.fp import FreeProxy
 
 from .exceptions import NoProxiesAvailable
 
-logging.basicConfig(
-    format="%(asctime)s | %(levelname)s | %(filename)s:%(lineno)d | %(funcName)s | %(message)s", level=logging.DEBUG
-)
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
 class ProxyManager:
-    def __init__(self, country_id=None, timeout=0.5, https=True, check_anonymity=True):
-        self.fp = FreeProxy(country_id=country_id, timeout=timeout, https=https, rand=True)
-        self.proxy_list = []
-        self.check_anonymity = check_anonymity
+    def __init__(self, timeout=5, refresh_interval=300, blacklist_duration=600, num_proxies=20):
         self.logger = logging.getLogger(__name__)
-        self.client = self._create_client()
+        self.fp = FreeProxy()
+        self.proxy_list = []
+        self.blacklist = {}  # {proxy: timestamp}
+        self.refresh_interval = refresh_interval
+        self.blacklist_duration = blacklist_duration
+        self.last_refresh = 0
+        self.num_proxies = num_proxies
+        self.timeout = timeout
+        self.test_url = "https://scholar.google.com/"  # Test with Google Scholar
 
-    def _create_client(self, proxy=None):
-        """Creates an httpx.AsyncClient with caching enabled."""
-        return httpx.AsyncClient(
-            mounts={
-                "https://": httpx.AsyncHTTPTransport(proxy=f"https://{proxy}"),
-                "http://": httpx.AsyncHTTPTransport(proxy=f"http://{proxy}"),
-            },
-        )
+    async def _test_proxy(self, proxy: str) -> Optional[str]:
+        """Test if a proxy is working using aiohttp and CONNECT."""
+        if proxy in self.blacklist and time.time() - self.blacklist[proxy] < self.blacklist_duration:
+            return None
 
-    async def _test_proxy(self, proxy):
-        """Tests a single proxy for speed and anonymity."""
-        test_url = "https://httpbin.org/ip"
+        proxy_url = f"http://{proxy}"
+        timeout = aiohttp.ClientTimeout(total=self.timeout)
+        connect_url = self.test_url
+        parsed_url = urlparse(connect_url)
+        connect_host = parsed_url.hostname
+        connect_port = parsed_url.port if parsed_url.port else 443
+
         try:
-            start_time = asyncio.get_event_loop().time()
-            # Use self.client (the cached client)
-            self.client = self._create_client(proxy)
-            response = await self.client.get(test_url, timeout=5)
-            response.raise_for_status()
-            end_time = asyncio.get_event_loop().time()
-            latency = end_time - start_time
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                try:
+                    async with session.request(
+                        "CONNECT",
+                        f"http://{connect_host}:{connect_port}",
+                        proxy=proxy_url,
+                        headers={"Host": connect_host},
+                    ) as conn_response:
+                        conn_response.raise_for_status()
+                        self.logger.debug(f"CONNECT tunnel established via {proxy}")
 
-            if self.check_anonymity:
-                if "X-Forwarded-For" in response.headers or "Via" in response.headers:
-                    anonymity = "Transparent"
-                else:
-                    anonymity = "Anonymous"  # Could also be Elite, hard to distinguish
-            else:
-                anonymity = "Unknown"
-            return proxy, latency, anonymity
+                        async with session.get(
+                            connect_url,
+                            ssl=True,
+                            headers={"Host": connect_host},
+                        ) as get_response:
+                            get_response.raise_for_status()
+                            self.logger.info(f"Successfully fetched {connect_url} using proxy: {proxy}")
+                            return proxy  # Return just the proxy (no latency)
 
-        except (httpx.HTTPError, httpx.RequestError, asyncio.TimeoutError) as e:
-            return None, None, None
+                except aiohttp.ClientProxyConnectionError as e:
+                    self.logger.debug(f"Proxy connection error: {e}")
+                except aiohttp.ClientResponseError as e:
+                    self.logger.debug(f"HTTP error after CONNECT: {e.status} - {e.message}")
+                except Exception as e:
+                    self.logger.debug(f"Error during CONNECT: {type(e).__name__}: {e}")
+        except Exception as e:
+            self.logger.debug(f"Error testing proxy {proxy}: {type(e).__name__}: {e}")
 
-    async def get_working_proxies(self, num_proxies=10):
-        """Gets a list of working proxies, testing for speed and anonymity."""
+        return None
+
+    async def get_working_proxies(self) -> List[str]:
+        """Fetch, test, and return a list of working proxies."""
+        current_time = time.time()
+        if current_time - self.last_refresh < self.refresh_interval and self.proxy_list:
+            return self.proxy_list
+
         raw_proxies = self.fp.get_proxy_list(repeat=True)
+        self.logger.debug(f"Fetched proxies: {raw_proxies}")
         if not raw_proxies:
-            raise NoProxiesAvailable("No raw proxies found from free-proxy.")
+            self.logger.warning("No proxies found from FreeProxy.")
+            raise NoProxiesAvailable("No raw proxies found.")
 
-        working_proxies = []
         tasks = [self._test_proxy(proxy) for proxy in raw_proxies]
         results = await asyncio.gather(*tasks)
 
-        for proxy, latency, anonymity in results:
-            if proxy:
-                working_proxies.append((proxy, latency, anonymity))
+        working_proxies = [proxy for proxy in results if proxy]  # Filter out None values
+        self.proxy_list = working_proxies[: self.num_proxies]  # Limit to the first num_proxies
+        self.last_refresh = time.time()
 
-        working_proxies.sort(key=lambda x: x[1])
-        self.proxy_list = [p[0] for p in working_proxies[:num_proxies]]
-        self.logger.info(f"Found {len(self.proxy_list)} working proxies.")
         if not self.proxy_list:
-            raise NoProxiesAvailable("No working proxies found after testing")
+            self.logger.warning("No working proxies found.")
+            raise NoProxiesAvailable("No working proxies found.")
+
         return self.proxy_list
 
-    def get_random_proxy(self):
-        if self.proxy_list:
-            return random.choice(self.proxy_list)
-        return None
+    async def refresh_proxies(self):
+        """Force refresh the proxy list."""
+        await self.get_working_proxies()
+
+    def get_random_proxy(self) -> Optional[str]:
+        """Return a random working proxy."""
+        try:
+            if not self.proxy_list:
+                asyncio.run(self.refresh_proxies())  # Blocks the calling method.
+            return random.choice(self.proxy_list) if self.proxy_list else None
+        except NoProxiesAvailable:
+            return None
+
+    def remove_proxy(self, proxy: str):
+        """Remove a proxy and blacklist it."""
+        if proxy in self.proxy_list:
+            self.proxy_list.remove(proxy)
+            self.blacklist[proxy] = time.time()
+            self.logger.info(f"Removed proxy {proxy} and added to blacklist.")
