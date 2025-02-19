@@ -2,7 +2,7 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Google Scholar](https://img.shields.io/badge/Google%20Scholar-blue)(https://scholar.google.com/)]
+[![Google Scholar](https://img.shields.io/badge/Google%20Scholar-blue)](https://scholar.google.com/)
 
 **A research tool for efficiently gathering and analyzing data from Google Scholar. With advanced search, including publications, citations, author profiles and other features like PDF downloads, citation analysis, and proxy rotation (CAPTCHAs Bypass). ⚡️**
 
