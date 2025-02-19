@@ -58,8 +58,8 @@
 1.  **Clone the repository:**
 
     ```bash
-    git clone [repository URL]  # Replace with your repo URL
-    cd scholar_scraper
+    git clone [[repository URL]](https://github.com/Anu-bhav/google-scholar-research)
+    cd google-scholar-research
     ```
 
 2.  **Create and activate a virtual environment (recommended):**
@@ -78,7 +78,7 @@
     Or install them individually:
 
     ```bash
-    pip install aiohttp aiosqlite networkx pandas colorama fake-useragent parsel fp tqdm
+    pip install aiohttp aiosqlite networkx pandas colorama fake-useragent parsel free-proxy tqdm
     ```
 
 ## 🚀 Usage
@@ -86,7 +86,7 @@
 Run the scraper from the command line:
 
 ```bash
-python scholar_scraper.py "<search query>" [options]
+python google_scholar_research_tool.py "<search query>" [options]
 ```
 
 **Available Options:**
@@ -118,25 +118,25 @@ python scholar_scraper.py "<search query>" [options]
 - Basic keyword search:
 
   ```bash
-  python scholar_scraper.py "machine learning"
+  python google_scholar_research_tool.py "machine learning"
   ```
 
   - Scrape author profile:
 
   ```bash
-   python scholar_scraper.py --author_profile "Yoshua Bengio" --output "yoshua_bengio.json" --json
+   python google_scholar_research_tool.py --author_profile "Yoshua Bengio" --output "yoshua_bengio.json" --json
   ```
 
 - Search with author and year range, output to JSON:
 
   ```bash
-  python scholar_scraper.py "deep learning" -a "Yoshua Bengio" -l 2020 --json -o bengio_dl_2020.json
+  python google_scholar_research_tool.py "deep learning" -a "Yoshua Bengio" -l 2020 --json -o bengio_dl_2020.json
   ```
 
 - Search with phrase, exclusion, and title constraints:
 
   ```bash
-  python scholar_scraper.py --phrase "generative adversarial networks" --exclude "image processing" --title "GANs in healthcare" -n 50
+  python google_scholar_research_tool.py --phrase "generative adversarial networks" --exclude "image processing" --title "GANs in healthcare" -n 50
   ```
 
 **Section 5: Important Considerations, License, Acknowledgements, Contributing, and Disclaimer**
@@ -160,7 +160,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [networkx](https://networkx.org/): Library for creating and manipulating graphs.
 - [tqdm](https://tqdm.github.io/): Progress bar library.
 - [fake-useragent](https://github.com/fake-useragent/fake-useragent): Generates random user agents.
-- [free-proxy](https://github.com/howuku/free-proxy): For fetching free proxies. (Consider replacing with a paid service for production)
+- [free-proxy](https://github.com/howuku/free-proxy): For fetching free proxies.
 - [Unpaywall](https://unpaywall.org/): For locating Open Access versions.
 
 ## 🤝 Contributing

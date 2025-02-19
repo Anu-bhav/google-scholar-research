@@ -1,8 +1,9 @@
-httpx
-parsel
-free-proxy
-fake-useragent
+aiohttp
+aiosqlite
 networkx
 pandas
-httpx-caching
-sqlite-utils
+colorama
+fake-useragent
+parsel
+free-proxy
+tqdm
