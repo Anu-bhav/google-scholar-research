@@ -1,4 +1,4 @@
-# scholar_scraper.py
+# scholar_scraper.py (Fully Improved)
 import argparse
 import asyncio
 import csv
@@ -801,7 +801,8 @@ async def main():
     parser.add_argument("--graph_file", default="citation_graph.graphml", help="Citation graph filename.")
     args = parser.parse_args()
 
-    query_builder = QueryBuilder()
+    # --- Removed while loop ---
+
     proxy_manager = ProxyManager()
     fetcher = Fetcher(proxy_manager=proxy_manager)
     data_handler = DataHandler()
@@ -810,76 +811,31 @@ async def main():
     await data_handler.create_table()
     os.makedirs(args.pdf_dir, exist_ok=True)
 
-    all_results = []
-    start_index = 0
-
     try:
         await proxy_manager.get_working_proxies()
     except NoProxiesAvailable:
         logging.error("No working proxies. Exiting.")
         return
 
-    while len(all_results) < args.num_results:
-        url = query_builder.build_url(args.query, start_index, args.authors, args.publication, args.year_low, args.year_high)
-
-        if await data_handler.result_exists(url):
-            start_index += 10
-            continue
-
-        html_content = await fetcher.fetch_page(url)
-        if not html_content:
-            start_index += 10
-            continue
-
-        try:
-            parsed_results_with_items = list(
-                zip(fetcher.parser.parse_results(html_content, True), fetcher.parser.parse_raw_items(html_content))
-            )
-            results = [result_item[0] for result_item in parsed_results_with_items]
-            raw_items = [result_item[1] for result_item in parsed_results_with_items]
-            if not results:
-                break
-
-            for item, result in zip(raw_items, results):
-                pdf_url = None
-                if result.get("doi"):
-                    pdf_url = await fetcher.scrape_pdf_link(result["doi"])
-                if not pdf_url:
-                    extracted_url = fetcher.parser.extract_pdf_url(item)
-                    if extracted_url:
-                        pdf_url = "https://scholar.google.com" + extracted_url if extracted_url.startswith("/") else extracted_url
-                if pdf_url:
-                    result["pdf_url"] = pdf_url
-                    safe_title = re.sub(r'[\\/*?:"<>|]', "", result["title"])
-                    pdf_filename = os.path.join(
-                        args.pdf_dir, f"{safe_title}_{result.get('publication_info', {}).get('year', 'unknown')}.pdf"
-                    )
-                    if await fetcher.download_pdf(pdf_url, pdf_filename):
-                        result["pdf_path"] = pdf_filename
-                await data_handler.insert_result(result)
-
-                cited_title = await fetcher.extract_cited_title(result.get("cited_by_url"))
-                graph_builder.add_citation(result["title"], result["article_url"], result.get("cited_by_url"), cited_title)
-                if result.get("cited_by_url"):
-                    await fetcher.fetch_cited_by_page(result["cited_by_url"], proxy_manager, 1, args.max_depth, graph_builder)
-
-            all_results.extend(results)
-            next_page = fetcher.parser.find_next_page(html_content)
-            if next_page:
-                start_index += 10
-            else:
-                break
-        except ParsingException as e:
-            start_index += 10
-            continue
-
-    all_results = all_results[: args.num_results]
+    results = await fetcher.scrape(
+        args.query,
+        args.authors,
+        args.publication,
+        args.year_low,
+        args.year_high,
+        args.num_results,
+        args.pdf_dir,
+        args.max_depth,
+        graph_builder,
+        data_handler,
+    )
+    await fetcher.close()
 
     if args.json:
-        data_handler.save_to_json(all_results, args.output)
+        data_handler.save_to_json(results, args.output)
     else:
-        data_handler.save_to_csv(all_results, args.output)
-    logging.info(f"Successfully scraped and saved {len(all_results)} results in {args.output}")
+        data_handler.save_to_csv(results, args.output)
+    logging.info(f"Successfully scraped and saved {len(results)} results in {args.output}")
 
     print(f"Citation graph: {graph_builder.graph.number_of_nodes()} nodes, {graph_builder.graph.number_of_edges()} edges")
     graph_builder.save_graph(args.graph_file)
