@@ -1,16 +1,18 @@
-# scholar_scraper.py
+# google_scholar_research_tool.py
 import argparse
 import asyncio
 import logging
 import os
+import random
 
 import pandas as pd
-from data_handler import DataHandler
-from exceptions import NoProxiesAvailable
-from fetcher import Fetcher
-from graph_builder import GraphBuilder
-from proxy_manager import ProxyManager
 from tqdm import tqdm
+
+from scholar_scraper.data_handler import DataHandler
+from scholar_scraper.exceptions import NoProxiesAvailable
+from scholar_scraper.fetcher import Fetcher
+from scholar_scraper.graph_builder import GraphBuilder
+from scholar_scraper.proxy_manager import NoProxiesAvailable, ProxyManager
 
 
 async def main():
@@ -26,6 +28,9 @@ async def main():
     parser.add_argument("--pdf_dir", default="pdfs", help="Directory for PDFs.")
     parser.add_argument("--max_depth", type=int, default=3, help="Max citation depth.")
     parser.add_argument("--graph_file", default="citation_graph.graphml", help="Citation graph filename.")
+    parser.add_argument(
+        "--log_level", default="DEBUG", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Logging level."
+    )  # Added log level argument
 
     # --- Advanced Search Options ---
     parser.add_argument("--phrase", help="Search for an exact phrase.", default=None)
@@ -38,11 +43,34 @@ async def main():
     parser.add_argument(
         "--recursive", action="store_true", help="Recursively scrape author's publications."
     )  # Added recursive flag
+    parser.add_argument(
+        "--graph_layout", default="spring", choices=["spring", "circular", "kamada_kawai"], help="Graph visualization layout."
+    )  # Added graph layout option
+    parser.add_argument(
+        "--centrality_filter", type=float, default=None, help="Filter graph visualization by centrality (>=)."
+    )  # Centrality filter
 
     args = parser.parse_args()
 
+    # --- Input Validation ---
     if not args.query and not args.author_profile:
-        parser.error("Either a query or --author_profile must be provided.")
+        parser.error("Error: Either a query or --author_profile must be provided.")
+    if args.num_results <= 0:
+        parser.error("Error: --num_results must be a positive integer.")
+    if args.max_depth < 0:
+        parser.error("Error: --max_depth cannot be negative.")
+    if args.year_low is not None and not (1000 <= args.year_low <= 2100):
+        parser.error("Error: --year_low must be a valid year (1000-2100).")
+    if args.year_high is not None and not (1000 <= args.year_high <= 2100):
+        parser.error("Error: --year_high must be a valid year (1000-2100).")
+    if args.centrality_filter is not None and args.centrality_filter < 0:
+        parser.error("Error: --centrality_filter must be a non-negative value.")
+
+    # --- Logging Configuration ---
+    logging.basicConfig(
+        format="%(asctime)s | %(levelname)s | %(filename)s:%(lineno)d | %(funcName)s | %(message)s",
+        level=args.log_level.upper(),  # Set log level from argument
+    )
 
     proxy_manager = ProxyManager()
     fetcher = Fetcher(proxy_manager=proxy_manager)
@@ -52,69 +80,120 @@ async def main():
     await data_handler.create_table()
     os.makedirs(args.pdf_dir, exist_ok=True)
 
-    try:
-        await proxy_manager.get_working_proxies()
-    except NoProxiesAvailable:
-        logging.error("No working proxies. Exiting.")
-        return
+    try:  # Top-level error handling
+        try:
+            await proxy_manager.get_working_proxies()
+        except NoProxiesAvailable:
+            logging.error("No working proxies available. Exiting.")
+            return
 
-    if args.author_profile:
-        author_data = await fetcher.fetch_author_profile(args.author_profile)
-        if author_data:
+        if args.author_profile:
+            author_data = await fetcher.fetch_author_profile(args.author_profile)
+            if author_data:
+                if args.json:
+                    data_handler.save_to_json(author_data, args.output)
+                else:  # Save author to csv if not json.
+                    df = pd.DataFrame([author_data])
+                    try:  # Output file error handling
+                        df.to_csv(args.output, index=False)
+                    except IOError as e:
+                        logging.error(f"Error saving to CSV file '{args.output}': {e}", exc_info=True)
+                        print(f"Error saving to CSV file. Check logs for details.")
+                        return
+                print(f"Author profile data saved to {args.output}")
+
+                if args.recursive:
+                    recursive_results = []
+                    print("Recursively scraping author's publications...")
+                    for pub in tqdm(author_data["publications"], desc="Fetching Publication Details", unit="pub"):
+                        publication_detail = await fetcher.scrape_publication_details(pub["link"])  # Use new fetcher method
+                        if publication_detail:
+                            recursive_results.extend(publication_detail)  # Extend with list of results
+                        await asyncio.sleep(random.uniform(1, 2))  # Polite delay
+
+                    if recursive_results:
+                        print(f"Recursively scraped {len(recursive_results)} publication details.")
+                        if args.json:
+                            try:  # Output file error handling for recursive results
+                                data_handler.save_to_json(recursive_results, "recursive_" + args.output)  # Save to separate file
+                            except IOError as e:
+                                logging.error(
+                                    f"Error saving recursive results to JSON file 'recursive_{args.output}': {e}", exc_info=True
+                                )
+                                print(f"Error saving recursive results to JSON file. Check logs.")
+                        else:
+                            df_recursive = pd.DataFrame(recursive_results)
+                            try:  # Output file error handling for recursive results CSV
+                                df_recursive.to_csv("recursive_" + args.output, index=False)  # Save to separate CSV
+                            except IOError as e:
+                                logging.error(
+                                    f"Error saving recursive results to CSV file 'recursive_{args.output}': {e}", exc_info=True
+                                )
+                                print(f"Error saving recursive results to CSV file. Check logs.")
+                        print(f"Recursive publication details saved to recursive_{args.output}")
+                    else:
+                        print("No publication details found during recursive scraping.")
+
+        else:  # Main scraping logic for search queries
+            results = await fetcher.scrape(
+                args.query,
+                args.authors,
+                args.publication,
+                args.year_low,
+                args.year_high,
+                args.num_results,
+                args.pdf_dir,
+                args.max_depth,
+                graph_builder,
+                data_handler,
+                # Pass advanced search parameters
+                phrase=args.phrase,
+                exclude=args.exclude,
+                title=args.title,
+                author=args.author,
+                source=args.source,
+            )
+
+            # --- Data Filtering (Add this section) ---
+            if args.min_citations:
+                results = [result for result in results if result["cited_by_count"] >= args.min_citations]
+
             if args.json:
-                data_handler.save_to_json(author_data, args.output)
-            else:  # Save author to csv if not json.
-                df = pd.DataFrame([author_data])
-                df.to_csv(args.output, index=False)
-            print(f"Author profile data saved to {args.output}")
+                try:  # Output file error handling
+                    data_handler.save_to_json(results, args.output)
+                except IOError as e:
+                    logging.error(f"Error saving to JSON file '{args.output}': {e}", exc_info=True)
+                    print(f"Error saving to JSON file. Check logs for details.")
+                    return
+            else:
+                try:  # Output file error handling
+                    data_handler.save_to_csv(results, args.output)
+                except IOError as e:
+                    logging.error(f"Error saving to CSV file '{args.output}': {e}", exc_info=True)
+                    print(f"Error saving to CSV file. Check logs for details.")
+                    return
+            logging.info(f"Successfully scraped and saved {len(results)} results in {args.output}")
 
-            if args.recursive:
-                pass  # TODO: implement fetch details and recursive scraping.
-                # for publication in author_data['publications']:
-                # result = await fetcher.fetch_page(publication["link"]) # Implement fetch page details.
+            print(f"Citation graph: {graph_builder.graph.number_of_nodes()} nodes, {graph_builder.graph.number_of_edges()} edges")
+            graph_builder.save_graph(args.graph_file)
+            print(f"Citation graph saved to {args.graph_file}")
 
-        else:
-            print(f"Failed to fetch author profile for ID: {args.author_profile}")
+            graph_builder.generate_default_visualizations(
+                base_filename=args.graph_file.replace(".graphml", "")
+            )  # Generate default visualizations
+            print(f"Citation graph visualizations saved to {graph_builder.output_folder} folder")
 
-    else:
-        results = await fetcher.scrape(
-            args.query,
-            args.authors,
-            args.publication,
-            args.year_low,
-            args.year_high,
-            args.num_results,
-            args.pdf_dir,
-            args.max_depth,
-            graph_builder,
-            data_handler,
-            # Pass new arguments
-            phrase=args.phrase,
-            exclude=args.exclude,
-            title=args.title,
-            author=args.author,
-            source=args.source,
-        )
+    except Exception as e:  # Top-level exception handler for any unhandled errors
+        logging.critical(f"Unhandled exception in main(): {e}", exc_info=True)  # Log critical error with traceback
+        print(
+            f"A critical error occurred: {type(e).__name__} - {e}. Please check the logs for more details."
+        )  # User-friendly error message
 
-        # --- Data Filtering (Add this section) ---
-        if args.min_citations:
-            results = [result for result in results if result["cited_by_count"] >= args.min_citations]
-
-        if args.json:
-            data_handler.save_to_json(results, args.output)
-        else:
-            data_handler.save_to_csv(results, args.output)
-        logging.info(f"Successfully scraped and saved {len(results)} results in {args.output}")
-
-        print(f"Citation graph: {graph_builder.graph.number_of_nodes()} nodes, {graph_builder.graph.number_of_edges()} edges")
-        graph_builder.save_graph(args.graph_file)
-        print(f"Citation graph saved to {args.graph_file}")
-    await fetcher.close()
+    finally:
+        await fetcher.close()
+        proxy_manager.log_proxy_performance()
+        logging.info("--- Scraping process finished ---")  # End process log message
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        format="%(asctime)s | %(levelname)s | %(filename)s:%(lineno)d | %(funcName)s | %(message)s",
-        level=logging.DEBUG,
-    )
     asyncio.run(main())

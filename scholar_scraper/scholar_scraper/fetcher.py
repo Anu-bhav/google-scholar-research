@@ -5,7 +5,7 @@ import os
 import random
 import re
 import time
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import aiohttp
 from fake_useragent import UserAgent
@@ -487,5 +487,21 @@ class Fetcher:
                 return author_data
             except ParsingException as e:
                 self.logger.error(f"Error parsing author profile: {e}")
+                return None
+        return None
+
+    async def scrape_publication_details(self, publication_url: str) -> Optional[List[Dict]]:
+        """Scrapes details for a single publication URL (e.g., from author profile).
+
+        Fetches the publication page and uses the parser to extract results.
+        Returns a list of parsed results (usually a list of one, but parser returns a list).
+        """
+        html_content = await self.fetch_page(publication_url)  # Reuse fetch_page for proxy and retry logic
+        if html_content:
+            try:
+                publication_details = self.parser.parse_results(html_content)  # Reuse parser
+                return publication_details  # Returns a list of dicts
+            except ParsingException as e:
+                self.logger.error(f"Error parsing publication details from {publication_url}: {e}")
                 return None
         return None
