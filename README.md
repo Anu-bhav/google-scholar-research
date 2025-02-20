@@ -34,8 +34,11 @@
 - **Citation Network Analysis:**
   - Builds a citation graph to visualize research connections.
   - Configurable depth for citation exploration.
+    **Graph Visualization Options:**
+    - **Layout Algorithms:** Choose from `spring`, `circular`, and `kamada_kawai` layouts for different graph perspectives.
+    - **Centrality Filtering:** Focus visualizations on the most influential papers by filtering nodes based on their in-degree centrality.
 - **Robustness and Reliability:**
-  - **Smart Proxy Rotation:** Automatically switches proxies on failures (429, 403, connection errors).
+  - **Smart Proxy Rotation:** Automatically switches proxies on failures (429, 403, connection errors). **Enhanced proxy management includes performance tracking for better proxy selection.**
   - **CAPTCHA Detection:** Identifies CAPTCHAs and pauses to avoid getting blocked.
   - **Error Handling:** Gracefully handles various network and parsing issues.
 - **Performance:**
@@ -139,13 +142,31 @@ python google_scholar_research_tool.py "<search query>" [options]
   python google_scholar_research_tool.py --phrase "generative adversarial networks" --exclude "image processing" --title "GANs in healthcare" -n 50
   ```
 
-**Section 5: Important Considerations, License, Acknowledgements, Contributing, and Disclaimer**
+- Scrape author profile recursively and visualize graph with circular layout:
+
+  ```bash
+  python google_scholar_research_tool.py --author_profile "Yoshua Bengio" --recursive --graph_layout circular --graph_file bengio_citation_circular.graphml
+  ```
+
+  - Visualize citation graph with centrality filter (showing only papers with in-degree centrality >= 0.01):
+
+  ```bash
+  python google_scholar_research_tool.py "climate change" --graph_file climate_graph_filtered.graphml --centrality_filter 0.01
+  ```
+
+  - Run with INFO logging level (less verbose than DEBUG):
+
+  ```bash
+  python google_scholar_research_tool.py "renewable energy" --log_level INFO
+  ```
+
+  **Section 5: Important Considerations, License, Acknowledgements, Contributing, and Disclaimer**
 
 ## ⚠️ Important Considerations
 
 - **Terms of Service:** Scraping Google Scholar may violate their Terms of Service. Use this tool responsibly and ethically. Google may block your IP address if you scrape too aggressively.
 - **CAPTCHA:** Google Scholar uses CAPTCHAs. This scraper has basic detection, but bypassing them reliably is difficult. Expect to encounter CAPTCHAs, especially with frequent or large-scale scraping.
-- **Proxies:** This tool uses _free_ proxies, which are often unreliable. For production use, _strongly_ consider using a reputable paid proxy service.
+- **Proxies:** This tool uses _free_ proxies, which are often unreliable. For production use, _strongly_ consider using a reputable paid proxy service. **Note that the tool now includes proxy performance monitoring to better manage and select proxies, but the inherent limitations of free proxies still apply.**
 - **Rate Limiting:** The scraper includes delays to be respectful, but you may need to adjust the timing (`--min_delay`, `--max_delay` - _not yet implemented as CLI options, but present in code_) based on your usage.
 
 ## 📜 License
