@@ -8,13 +8,13 @@ import time
 from typing import List, Optional
 
 import aiohttp
-import tqdm
 from fake_useragent import UserAgent
 from parsel import Selector
+from tqdm import tqdm
 
 from .exceptions import CaptchaException, NoProxiesAvailable, ParsingException
 from .models import ProxyErrorType  # Import ProxyErrorType
-from .parser import AuthorProfileParser, Parser
+from .parser import AuthorProfileParser, Parser  # Make sure AuthorProfileParser is still used if needed
 from .proxy_manager import ProxyManager
 from .query_builder import QueryBuilder
 from .utils import detect_captcha, get_random_user_agent
@@ -39,7 +39,7 @@ class Fetcher:
         self.max_delay = max_delay
         self.max_retries = max_retries
         self.parser = Parser()
-        self.author_parser = AuthorProfileParser()
+        self.author_parser = AuthorProfileParser()  # Keep this if you are still using AuthorProfileParser
         # Statistics
         self.successful_requests = 0
         self.failed_requests = 0
@@ -421,16 +421,9 @@ class Fetcher:
                     for item, result in zip(raw_items, results):
                         pdf_url = None
                         if result.get("doi"):
-                            pdf_url = await self.scrape_pdf_link(result["doi"])
-                        if not pdf_url:
-                            extracted_url = self.parser.extract_pdf_url(item)
-                            if extracted_url:
-                                pdf_url = (
-                                    "https://scholar.google.com" + extracted_url
-                                    if extracted_url.startswith("/")
-                                    else extracted_url
-                                )
-                        if pdf_url:
+                            pdf_url = await self.scrape_pdf_link(result["doi"])  # Directly use scrape_pdf_link with DOI
+
+                        if pdf_url:  # Only proceed if pdf_url is found by scrape_pdf_link
                             result["pdf_url"] = pdf_url
                             safe_title = re.sub(r'[\\/*?:"<>|]', "", result["title"])
                             pdf_filename = os.path.join(
