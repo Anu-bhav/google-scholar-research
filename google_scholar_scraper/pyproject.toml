@@ -1,0 +1,57 @@
+# pyproject.toml
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"] # Added wheel for distribution
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "google-scholar-scraper" # More descriptive and typical package name format (hyphenated)
+version = "0.1.0"
+description = "A Python tool for scraping and analyzing data from Google Scholar, including advanced search, author profiles, citation networks, and PDF downloading."
+readme = "README.md" # Point to your README file
+authors = [
+    { name = "Anubhavsingh Sawdagur", github = "https://github.com/Anu-bhav" }
+]
+maintainers = [ # Optional, if maintainers are different from authors
+    { name = "Anubhavsingh Sawdagur", github = "https://github.com/Anu-bhav" }
+]
+license = { text = "MIT License" } # Or specify file = "LICENSE" if you have a LICENSE file in project root
+keywords = ["google-scholar", "scraper", "academic", "research", "citation", "pdf", "data-extraction"]
+classifiers = [
+    "Development Status :: 3 - Alpha", # Or "4 - Beta", "5 - Production/Stable" as project matures
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet :: WWW/HTTP ::爬虫" # Added Chinese classifier for web scraping (optional, but shows consideration for broader audience if applicable)
+]
+requires-python = ">=3.8" # Specify minimum Python version
+
+dependencies = [
+    "aiohttp",
+    "aiosqlite",
+    "networkx",
+    "pandas",
+    "fake-useragent",
+    "free-proxy",
+    "parsel",
+    "tqdm",
+    "matplotlib" # Added matplotlib for graph visualization
+]
+
+[project.scripts]
+scholar-scraper = "google_scholar_scraper.main:main" # Corrected entry point to the main script file name
+
+[project.urls]
+"Homepage" = "https://github.com/Anu-bhav/google-scholar-research" # Replace with your project's homepage if different
+"Bug Tracker" = "https://github.com/Anu-bhav/google-scholar-research/issues" # Replace with your issue tracker URL
+"Documentation" = "https://github.com/Anu-bhav/google-scholar-research/blob/main/README.md" # Replace if you have documentation hosted
+"Source Code" = "https://github.com/Anu-bhav/google-scholar-research" # Replace with your repo URL

@@ -8,11 +8,11 @@ import random
 import pandas as pd
 from tqdm import tqdm
 
-from scholar_scraper.data_handler import DataHandler
-from scholar_scraper.exceptions import NoProxiesAvailable
-from scholar_scraper.fetcher import Fetcher
-from scholar_scraper.graph_builder import GraphBuilder
-from scholar_scraper.proxy_manager import NoProxiesAvailable, ProxyManager
+from .data_handler import DataHandler
+from .exceptions import NoProxiesAvailable
+from .fetcher import Fetcher
+from .graph_builder import GraphBuilder
+from .proxy_manager import NoProxiesAvailable, ProxyManager
 
 
 async def main():
