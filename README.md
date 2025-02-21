@@ -148,19 +148,17 @@ python google_scholar_research_tool.py "<search query>" [options]
   python google_scholar_research_tool.py --author_profile "Yoshua Bengio" --recursive --graph_layout circular --graph_file bengio_citation_circular.graphml
   ```
 
-  - Visualize citation graph with centrality filter (showing only papers with in-degree centrality >= 0.01):
+- Visualize citation graph with centrality filter (showing only papers with in-degree centrality >= 0.01):
 
   ```bash
   python google_scholar_research_tool.py "climate change" --graph_file climate_graph_filtered.graphml --centrality_filter 0.01
   ```
 
-  - Run with INFO logging level (less verbose than DEBUG):
+- Run with INFO logging level (less verbose than DEBUG):
 
   ```bash
   python google_scholar_research_tool.py "renewable energy" --log_level INFO
   ```
-
-  **Section 5: Important Considerations, License, Acknowledgements, Contributing, and Disclaimer**
 
 ## ⚠️ Important Considerations
 
