@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import json
 import logging
@@ -249,7 +250,7 @@ class QueryBuilder:
 
 class ProxyManager:
     def __init__(
-        self, timeout=5, refresh_interval=300, blacklist_duration=600, num_proxies=20, blacklist_file="proxy_blacklist.json"
+        self, timeout=5, refresh_interval=300, blacklist_duration=600, num_proxies=50, blacklist_file="proxy_blacklist.json"
     ):
         """Initializes the ProxyManager.
 
@@ -486,6 +487,7 @@ class Parser:
                 related_articles_url = self.extract_related_articles_url(item_selector)
                 article_url = self.extract_article_url(item_selector)
                 doi = self.extract_doi(item_selector)
+                direct_pdf_url = self.extract_direct_pdf_url(item_selector)
 
                 result = {
                     "title": title,
@@ -498,7 +500,7 @@ class Parser:
                     "related_articles_url": related_articles_url,
                     "article_url": article_url,
                     "doi": doi,
-                    "pdf_url": None,  # Initialize
+                    "pdf_url": direct_pdf_url,  # Initialize
                     "pdf_path": None,  # Initialize
                 }
 
@@ -622,6 +624,21 @@ class Parser:
             self.logger.error(f"Error extracting DOI: {e}")
             return None
 
+    def extract_direct_pdf_url(self, item_selector):
+        """Extracts direct PDF link from the item, if present."""
+        try:
+            pdf_link_tag = item_selector.css("div.gs_ggsd a[href*='.pdf']")  # Look for links in gs_ggsd div with .pdf in href
+            if pdf_link_tag:
+                href = pdf_link_tag.attrib["href"]
+                if not href.startswith(("http://", "https://")):  # Handle relative URLs
+                    base_url = "https://scholar.google.com"  # Google Scholar base URL
+                    href = urllib.parse.urljoin(base_url, href)
+                return href
+            return None
+        except Exception as e:
+            self.logger.error(f"Error extracting direct PDF URL: {e}")
+            return None
+
     def find_next_page(self, html_content):
         selector = Selector(text=html_content)
         next_button = selector.css('a[aria-label="Next"]')
@@ -690,16 +707,7 @@ class AuthorProfileParser:
 # fetcher.py
 class Fetcher:
     def __init__(self, proxy_manager=None, min_delay=2, max_delay=5, max_retries=3, rolling_window_size=20):
-        """Initializes the Fetcher.
-
-        Args:
-            proxy_manager (ProxyManager, optional): Proxy manager instance. Defaults to a new ProxyManager().
-            min_delay (int): Minimum delay between requests in seconds. Defaults to 2.
-            max_delay (int): Maximum delay between requests in seconds. Defaults to 5.
-            max_retries (int): Maximum number of retries for a failed request. Defaults to 3.
-            rolling_window_size (int): Size of the rolling window for RPS calculation. Defaults to 20.
-
-        """
+        """Initializes the Fetcher."""
         self.proxy_manager = proxy_manager or ProxyManager()
         self.logger = logging.getLogger(__name__)
         self.client: Optional[aiohttp.ClientSession] = None
@@ -707,8 +715,7 @@ class Fetcher:
         self.max_delay = max_delay
         self.max_retries = max_retries
         self.parser = Parser()
-        self.author_parser = AuthorProfileParser()  # Keep this if you are still using AuthorProfileParser
-        # Statistics
+        self.author_parser = AuthorProfileParser()
         self.successful_requests = 0
         self.failed_requests = 0
         self.proxies_used = set()
@@ -719,26 +726,22 @@ class Fetcher:
         self.start_time = None
 
     async def _create_client(self) -> aiohttp.ClientSession:
-        """Creates an aiohttp ClientSession if it doesn't exist or is closed."""
         if self.client is None or self.client.closed:
             timeout = aiohttp.ClientTimeout(total=10)
             self.client = aiohttp.ClientSession(timeout=timeout)
         return self.client
 
     async def _get_delay(self) -> float:
-        """Calculates a random delay before making a request."""
         return random.uniform(self.min_delay, self.max_delay)
 
     async def fetch_page(self, url: str, retry_count: Optional[int] = None) -> Optional[str]:
-        """Fetches a page with retries using the same proxy until failure."""
         headers = {"User-Agent": get_random_user_agent()}
         retry_count = retry_count or self.max_retries
         await self._create_client()
-
-        proxy = await self.proxy_manager.get_random_proxy()  # Get a proxy *once* per fetch_page call
+        proxy = await self.proxy_manager.get_random_proxy()
         if not proxy:
             self.logger.error("No proxies available at start of fetch for URL: %s", url)
-            return None  # Exit early if no proxy available initially
+            return None
         proxy_url = f"http://{proxy}"
         self.proxies_used.add(proxy)
 
@@ -747,24 +750,20 @@ class Fetcher:
                 delay = await self._get_delay()
                 await asyncio.sleep(delay)
                 request_start_time = time.monotonic()
-
                 async with self.client.get(url, headers=headers, proxy=proxy_url, timeout=10) as response:
                     response.raise_for_status()
                     html_content = await response.text()
                     if detect_captcha(html_content):
                         raise CaptchaException("CAPTCHA detected!")
-
                     self.successful_requests += 1
                     request_end_time = time.monotonic()
                     self.request_times.append(request_end_time - request_start_time)
                     self.request_times = self.request_times[-self.rolling_window_size :]
-                    self.proxy_manager.mark_proxy_success(proxy)  # Mark success after successful fetch
+                    self.proxy_manager.mark_proxy_success(proxy)
                     return html_content
-
             except (aiohttp.ClientError, asyncio.TimeoutError, CaptchaException) as e:
                 self.failed_requests += 1
                 self.logger.warning(f"Attempt {attempt + 1} failed for {url}: {type(e).__name__}: {e} with proxy {proxy}")
-
                 if isinstance(e, CaptchaException):
                     self.proxy_manager.mark_proxy_failure(proxy, ProxyErrorType.CAPTCHA)
                     self.proxy_manager.remove_proxy(proxy)
@@ -774,8 +773,7 @@ class Fetcher:
                     except NoProxiesAvailable:
                         self.logger.error("No proxies available after CAPTCHA.")
                         return None
-                    return None  # Immediately return None after CAPTCHA and proxy removal/refresh
-
+                    return None
                 if isinstance(e, asyncio.TimeoutError):
                     self.proxy_manager.mark_proxy_failure(proxy, ProxyErrorType.TIMEOUT)
                 elif isinstance(e, aiohttp.ClientProxyConnectionError):
@@ -789,24 +787,19 @@ class Fetcher:
                     self.logger.error(f"Failed to fetch {url} after {retry_count} attempts with proxy {proxy}.")
                     return None
                 else:
-                    await asyncio.sleep(random.uniform(2, 5))  # Wait a bit before retrying with the same proxy
-
+                    await asyncio.sleep(random.uniform(2, 5))
             except NoProxiesAvailable:
                 self.logger.error("No proxies available during fetching of %s", url)
                 return None
 
     async def fetch_pages(self, urls: List[str]) -> List[Optional[str]]:
-        """Fetches multiple pages concurrently, each potentially using a different proxy (initially chosen)."""
         await self._create_client()
         return await asyncio.gather(*[self.fetch_page(url) for url in urls])
 
     async def download_pdf(self, url: str, filename: str) -> bool:
-        """Downloads a PDF file with retries and proxy management."""
         headers = {"User-Agent": get_random_user_agent()}
         retries = 3
-
         await self._create_client()
-
         proxy = await self.proxy_manager.get_random_proxy()
         proxy_url = f"http://{proxy}" if proxy else None
 
@@ -820,7 +813,7 @@ class Fetcher:
                                 f.write(chunk)
                         self.logger.info(f"Downloaded PDF to {filename}")
                         self.pdfs_downloaded += 1
-                        self.proxy_manager.mark_proxy_success(proxy)  # Mark success on PDF download
+                        self.proxy_manager.mark_proxy_success(proxy)
                         return True
                     else:
                         self.logger.warning(f"URL did not return a PDF: {url}")
@@ -845,29 +838,38 @@ class Fetcher:
             except NoProxiesAvailable:
                 return False
 
-    async def scrape_pdf_link(self, doi: str) -> Optional[str]:
-        """Scrapes a PDF link from a DOI using Unpaywall and direct scraping."""
+    async def scrape_pdf_link(self, doi: Optional[str] = None, paper_url: Optional[str] = None) -> Optional[str]:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "Referer": "https://scholar.google.com",
         }
-        unpaywall_url = f"https://api.unpaywall.org/v2/{doi}?email=unpaywall@impactstory.org"
+        unpaywall_url = None
 
         await self._create_client()
+        pdf_url = None
+
+        if doi:
+            unpaywall_url = f"https://api.unpaywall.org/v2/{doi}?email=unpaywall@impactstory.org"
 
         try:
-            pdf_url = None
-            async with self.client.get(unpaywall_url, timeout=10) as response:
-                response.raise_for_status()
-                data = await response.json()
-                paper_url = data.get("doi_url")
-                if data.get("is_oa"):
-                    self.logger.info(f"Paper is Open Access according to Unpaywall. DOI: {doi}")
-                else:
-                    self.logger.info(f"Paper is NOT Open Access according to Unpaywall. DOI: {doi}")
+            if unpaywall_url:
+                async with self.client.get(unpaywall_url, timeout=10) as response:
+                    response.raise_for_status()
+                    data = await response.json()
+                    paper_url_unpaywall = data.get("doi_url")
+                    if data.get("is_oa"):
+                        self.logger.info(f"Paper is Open Access according to Unpaywall. DOI: {doi}")
+                    else:
+                        self.logger.info(f"Paper is NOT Open Access according to Unpaywall. DOI: {doi}")
+                    paper_url_to_scrape = paper_url_unpaywall
+            elif paper_url:
+                paper_url_to_scrape = paper_url
+            else:
+                return None
 
-                async with self.client.get(paper_url, headers=headers, timeout=20) as response:
+            if paper_url_to_scrape:
+                async with self.client.get(paper_url_to_scrape, headers=headers, timeout=20, allow_redirects=True) as response:
                     response.raise_for_status()
                     self.logger.info(f"Final URL after redirect: {response.url}")
                     final_url = str(response.url)
@@ -877,7 +879,6 @@ class Fetcher:
                         self.logger.info(f"Found PDF URL in meta tag: {meta_pdf_url}")
                         return meta_pdf_url
 
-                    # The rest of your scraping logic using aiohttp-compatible methods
                     for link in selector.xpath("//a"):
                         href = link.xpath("@href").get()
                         if not href:
@@ -917,7 +918,7 @@ class Fetcher:
                             pdf_url = "https://ieeexplore.ieee.org" + pdf_path
                             return pdf_url
 
-                    doi_last_3 = doi[-3:] if len(doi) >= 3 else doi
+                    doi_last_3 = doi[-3:] if doi and len(doi) >= 3 else ""
                     PDF_PATTERNS = [
                         ".pdf",
                         "/pdf/",
@@ -934,7 +935,7 @@ class Fetcher:
                     pdf_links = selector.css("a::attr(href)").getall()
                     for link in pdf_links:
                         if any(pattern in link.lower() for pattern in PDF_PATTERNS):
-                            if doi_last_3 in link.lower():
+                            if doi_last_3 and doi_last_3 in link.lower():
                                 pdf_url = str(response.url.join(link))
                                 return str(pdf_url)
                             pdf_url = str(response.url.join(link))
@@ -943,7 +944,7 @@ class Fetcher:
                     return None
 
         except aiohttp.ClientResponseError as e:
-            if e.status == 404:
+            if e.status == 404 and unpaywall_url:
                 self.logger.error(f"Paper with DOI {doi} not found by Unpaywall")
             return None
         except aiohttp.ClientError:
@@ -951,9 +952,9 @@ class Fetcher:
         except Exception as e:
             self.logger.exception(f"An unexpected error occurred: {e}")
             return None
+        return pdf_url
 
     async def extract_cited_title(self, cited_by_url):
-        """Extracts the title of the cited paper from the cited-by URL."""
         if not cited_by_url:
             return None
         try:
@@ -968,7 +969,6 @@ class Fetcher:
         return "Unknown Title"
 
     async def fetch_cited_by_page(self, url, proxy_manager, depth, max_depth, graph_builder):
-        """Recursively fetches and parses cited-by pages to build a citation graph."""
         if depth > max_depth:
             return []
 
@@ -991,12 +991,10 @@ class Fetcher:
         return tasks
 
     async def close(self):
-        """Closes the aiohttp ClientSession."""
         if self.client and not self.client.closed:
             await self.client.close()
 
     def calculate_rps(self):
-        """Calculates the rolling average of requests per second."""
         if len(self.request_times) < 2:
             return 0
         total_time = self.request_times[-1] - self.request_times[0]
@@ -1005,7 +1003,6 @@ class Fetcher:
         return (len(self.request_times) - 1) / total_time
 
     def calculate_etr(self, rps, total_results, results_collected):
-        """Calculates the estimated time remaining."""
         if rps == 0:
             return None
         remaining_results = total_results - results_collected
@@ -1031,29 +1028,6 @@ class Fetcher:
         author=None,
         source=None,
     ):
-        """Scrapes Google Scholar search results and related information.
-
-        Args:
-            query (str): The main search query.
-            authors (str, optional): Search for specific authors.
-            publication (str, optional): Search within a specific publication.
-            year_low (int, optional): Lower bound of the publication year range.
-            year_high (int, optional): Upper bound of the publication year range.
-            num_results (int): Maximum number of results to scrape.
-            pdf_dir (str): Directory to save downloaded PDFs.
-            max_depth (int): Maximum depth for recursive citation scraping.
-            graph_builder (GraphBuilder): Graph builder instance for citation graph.
-            data_handler (DataHandler): Data handler instance for database operations.
-            phrase (str, optional): Search for an exact phrase.
-            exclude (str, optional): Keywords to exclude (comma-separated).
-            title (str, optional): Search within the title.
-            author (str, optional): Search within the author field.
-            source (str, optional): Search within the source (publication).
-
-        Returns:
-            List[dict]: A list of scraped results.
-
-        """
         all_results = []
         start_index = 0
         query_builder = QueryBuilder()
@@ -1086,12 +1060,18 @@ class Fetcher:
                         break
 
                     citation_tasks = []
-                    for item, result in zip(raw_items, results):
-                        pdf_url = None
-                        if result.get("doi"):
-                            pdf_url = await self.scrape_pdf_link(result["doi"])  # Directly use scrape_pdf_link with DOI
+                    for result_item in parsed_results_with_items:
+                        result, raw_item = result_item
+                        pdf_url = result.get("pdf_url")  # Direct PDF URL from Parser (if any)
 
-                        if pdf_url:  # Only proceed if pdf_url is found by scrape_pdf_link
+                        if not pdf_url:  # If no direct PDF URL, try scraping from article page
+                            pdf_url_article_page = await self.scrape_pdf_link(
+                                paper_url=result.get("article_url"), doi=result.get("doi")
+                            )  # Pass article_url and doi
+                            if pdf_url_article_page:
+                                pdf_url = pdf_url_article_page  # Use article page PDF if found
+
+                        if pdf_url:  # If ANY pdf_url found
                             result["pdf_url"] = pdf_url
                             safe_title = re.sub(r'[\\/*?:"<>|]', "", result["title"])
                             pdf_filename = os.path.join(
@@ -1134,11 +1114,14 @@ class Fetcher:
                     })
 
                     all_results.extend(results)
-                    next_page = self.parser.find_next_page(html_content)
-                    if next_page:
-                        start_index += 10
-                    else:
-                        break
+                    logging.debug(f"Current all_results length: {len(all_results)}, target num_results: {num_results}")
+                    # next_page = self.parser.find_next_page(html_content)
+                    # if next_page:
+                    #     start_index += 10
+                    # else:
+                    #     break
+                    start_index += 10
+
                 except ParsingException:
                     start_index += 10
                     continue
@@ -1146,7 +1129,6 @@ class Fetcher:
         return all_results[:num_results]
 
     async def fetch_author_profile(self, author_id: str):
-        """Fetches and parses an author's profile page."""
         url = QueryBuilder().build_author_profile_url(author_id)
         html_content = await self.fetch_page(url)
         if html_content:
@@ -1159,16 +1141,11 @@ class Fetcher:
         return None
 
     async def scrape_publication_details(self, publication_url: str) -> Optional[List[Dict]]:
-        """Scrapes details for a single publication URL (e.g., from author profile).
-
-        Fetches the publication page and uses the parser to extract results.
-        Returns a list of parsed results (usually a list of one, but parser returns a list).
-        """
-        html_content = await self.fetch_page(publication_url)  # Reuse fetch_page for proxy and retry logic
+        html_content = await self.fetch_page(publication_url)
         if html_content:
             try:
-                publication_details = self.parser.parse_results(html_content)  # Reuse parser
-                return publication_details  # Returns a list of dicts
+                publication_details = self.parser.parse_results(html_content)
+                return publication_details
             except ParsingException as e:
                 self.logger.error(f"Error parsing publication details from {publication_url}: {e}")
                 return None
@@ -1532,3 +1509,188 @@ class GraphBuilder:
         self.logger.info(
             f"Generated default visualizations in '{self.output_folder}' folder: {', '.join([f'{base_filename}_{layout}_layout.png' for layout in layouts])}"
         )
+
+
+# google_scholar_research_tool.py
+async def main():
+    parser = argparse.ArgumentParser(description="Scrape Google Scholar search results.")
+    parser.add_argument("query", help="The search query.", nargs="?")  # Make query optional
+    parser.add_argument("-a", "--authors", help="Search by author(s).", default=None)
+    parser.add_argument("-p", "--publication", help="Search by publication.", default=None)
+    parser.add_argument("-l", "--year_low", type=int, help="Lower bound of year range.", default=None)
+    parser.add_argument("-u", "--year_high", type=int, help="Upper bound of year range.", default=None)
+    parser.add_argument("-n", "--num_results", type=int, default=10, help="Max number of results.")
+    parser.add_argument("-o", "--output", default="results.csv", help="Output file (CSV or JSON).")
+    parser.add_argument("--json", action="store_true", help="Output in JSON format.")
+    parser.add_argument("--pdf_dir", default="pdfs", help="Directory for PDFs.")
+    parser.add_argument("--max_depth", type=int, default=3, help="Max citation depth.")
+    parser.add_argument("--graph_file", default="citation_graph.graphml", help="Citation graph filename.")
+    parser.add_argument(
+        "--log_level", default="DEBUG", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Logging level."
+    )  # Added log level argument
+
+    # --- Advanced Search Options ---
+    parser.add_argument("--phrase", help="Search for an exact phrase.", default=None)
+    parser.add_argument("--exclude", help="Exclude keywords (comma-separated).", default=None)
+    parser.add_argument("--title", help="Search within the title.", default=None)
+    parser.add_argument("--author", help="Search within the author field.", default=None)
+    parser.add_argument("--source", help="Search within the source (publication).", default=None)
+    parser.add_argument("--min_citations", type=int, help="Minimum number of citations.", default=None)
+    parser.add_argument("--author_profile", type=str, help="Scrape an author's profile by their ID.")  # Added author profile
+    parser.add_argument(
+        "--recursive", action="store_true", help="Recursively scrape author's publications."
+    )  # Added recursive flag
+    parser.add_argument(
+        "--graph_layout", default="spring", choices=["spring", "circular", "kamada_kawai"], help="Graph visualization layout."
+    )  # Added graph layout option
+    parser.add_argument(
+        "--centrality_filter", type=float, default=None, help="Filter graph visualization by centrality (>=)."
+    )  # Centrality filter
+
+    args = parser.parse_args()
+
+    # --- Input Validation ---
+    if not args.query and not args.author_profile:
+        parser.error("Error: Either a query or --author_profile must be provided.")
+    if args.num_results <= 0:
+        parser.error("Error: --num_results must be a positive integer.")
+    if args.max_depth < 0:
+        parser.error("Error: --max_depth cannot be negative.")
+    if args.year_low is not None and not (1000 <= args.year_low <= 2100):
+        parser.error("Error: --year_low must be a valid year (1000-2100).")
+    if args.year_high is not None and not (1000 <= args.year_high <= 2100):
+        parser.error("Error: --year_high must be a valid year (1000-2100).")
+    if args.centrality_filter is not None and args.centrality_filter < 0:
+        parser.error("Error: --centrality_filter must be a non-negative value.")
+
+    # --- Logging Configuration ---
+    logging.basicConfig(
+        format="%(asctime)s | %(levelname)s | %(filename)s:%(lineno)d | %(funcName)s | %(message)s",
+        level=args.log_level.upper(),  # Set log level from argument
+    )
+
+    proxy_manager = ProxyManager()
+    fetcher = Fetcher(proxy_manager=proxy_manager)
+    data_handler = DataHandler()
+    graph_builder = GraphBuilder()
+
+    await data_handler.create_table()
+    os.makedirs(args.pdf_dir, exist_ok=True)
+
+    try:  # Top-level error handling
+        try:
+            await proxy_manager.get_working_proxies()
+        except NoProxiesAvailable:
+            logging.error("No working proxies available. Exiting.")
+            return
+
+        if args.author_profile:
+            author_data = await fetcher.fetch_author_profile(args.author_profile)
+            if author_data:
+                if args.json:
+                    data_handler.save_to_json(author_data, args.output)
+                else:  # Save author to csv if not json.
+                    df = pd.DataFrame([author_data])
+                    try:  # Output file error handling
+                        df.to_csv(args.output, index=False)
+                    except IOError as e:
+                        logging.error(f"Error saving to CSV file '{args.output}': {e}", exc_info=True)
+                        print(f"Error saving to CSV file. Check logs for details.")
+                        return
+                print(f"Author profile data saved to {args.output}")
+
+                if args.recursive:
+                    recursive_results = []
+                    print("Recursively scraping author's publications...")
+                    for pub in tqdm(author_data["publications"], desc="Fetching Publication Details", unit="pub"):
+                        publication_detail = await fetcher.scrape_publication_details(pub["link"])  # Use new fetcher method
+                        if publication_detail:
+                            recursive_results.extend(publication_detail)  # Extend with list of results
+                        await asyncio.sleep(random.uniform(1, 2))  # Polite delay
+
+                    if recursive_results:
+                        print(f"Recursively scraped {len(recursive_results)} publication details.")
+                        if args.json:
+                            try:  # Output file error handling for recursive results
+                                data_handler.save_to_json(recursive_results, "recursive_" + args.output)  # Save to separate file
+                            except IOError as e:
+                                logging.error(
+                                    f"Error saving recursive results to JSON file 'recursive_{args.output}': {e}", exc_info=True
+                                )
+                                print(f"Error saving recursive results to JSON file. Check logs.")
+                        else:
+                            df_recursive = pd.DataFrame(recursive_results)
+                            try:  # Output file error handling for recursive results CSV
+                                df_recursive.to_csv("recursive_" + args.output, index=False)  # Save to separate CSV
+                            except IOError as e:
+                                logging.error(
+                                    f"Error saving recursive results to CSV file 'recursive_{args.output}': {e}", exc_info=True
+                                )
+                                print(f"Error saving recursive results to CSV file. Check logs.")
+                        print(f"Recursive publication details saved to recursive_{args.output}")
+                    else:
+                        print("No publication details found during recursive scraping.")
+
+        else:  # Main scraping logic for search queries
+            results = await fetcher.scrape(
+                args.query,
+                args.authors,
+                args.publication,
+                args.year_low,
+                args.year_high,
+                args.num_results,
+                args.pdf_dir,
+                args.max_depth,
+                graph_builder,
+                data_handler,
+                # Pass advanced search parameters
+                phrase=args.phrase,
+                exclude=args.exclude,
+                title=args.title,
+                author=args.author,
+                source=args.source,
+            )
+
+            # --- Data Filtering (Add this section) ---
+            if args.min_citations:
+                results = [result for result in results if result["cited_by_count"] >= args.min_citations]
+
+            if args.json:
+                try:  # Output file error handling
+                    data_handler.save_to_json(results, args.output)
+                except IOError as e:
+                    logging.error(f"Error saving to JSON file '{args.output}': {e}", exc_info=True)
+                    print(f"Error saving to JSON file. Check logs for details.")
+                    return
+            else:
+                try:  # Output file error handling
+                    data_handler.save_to_csv(results, args.output)
+                except IOError as e:
+                    logging.error(f"Error saving to CSV file '{args.output}': {e}", exc_info=True)
+                    print(f"Error saving to CSV file. Check logs for details.")
+                    return
+            logging.info(f"Successfully scraped and saved {len(results)} results in {args.output}")
+
+            print(f"Citation graph: {graph_builder.graph.number_of_nodes()} nodes, {graph_builder.graph.number_of_edges()} edges")
+            graph_builder.save_graph(args.graph_file)
+            print(f"Citation graph saved to {args.graph_file}")
+
+            graph_builder.generate_default_visualizations(
+                base_filename=args.graph_file.replace(".graphml", "")
+            )  # Generate default visualizations
+            print(f"Citation graph visualizations saved to {graph_builder.output_folder} folder")
+
+    except Exception as e:  # Top-level exception handler for any unhandled errors
+        logging.critical(f"Unhandled exception in main(): {e}", exc_info=True)  # Log critical error with traceback
+        print(
+            f"A critical error occurred: {type(e).__name__} - {e}. Please check the logs for more details."
+        )  # User-friendly error message
+
+    finally:
+        await fetcher.close()
+        proxy_manager.log_proxy_performance()
+        logging.info("--- Scraping process finished ---")  # End process log message
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
