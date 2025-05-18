@@ -10,6 +10,9 @@ This file tracks the project's current status, including recent changes, current
 - [2025-05-17 17:01:00] - Continuing to write unit tests for the Fetcher module (`fetcher.py`), focusing on `fetch_page` scenarios and other methods.
 
 - [2025-05-18 16:00:00] - Modified `ProxyManager` to use a "sticky" proxy (reuse IP until blacklisted) and updated `Fetcher` accordingly.
+- [2025-05-18 16:12:00] - Modified `Fetcher.scrape_pdf_link` to use the proxy manager for Unpaywall API requests and `fetch_page` for publisher site requests. Corrected type hints.
+
+- [2025-05-18 16:17:00] - Updated project documentation (`README.md`, `docs/GoogleScholarResearchToolOverview.md`, `docs/GoogleScholarResearchToolTechnicalDocumentation.md`) to reflect the new sticky proxy strategy and its integration.
 
 ## Recent Changes
 

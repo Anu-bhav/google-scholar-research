@@ -15,7 +15,7 @@ The codebase follows a modular structure with clear separation of concerns:
 - **Utility Functions**: Helper functions for common operations
 - **Core Classes**: Each representing a distinct responsibility
   - `QueryBuilder`: URL construction
-  - `ProxyManager`: Proxy lifecycle management
+  - `ProxyManager`: Proxy lifecycle management, implementing a "sticky" proxy strategy with performance tracking and blacklist persistence.
   - `Parser`: Search results parsing
   - `AuthorProfileParser`: Author profile parsing
   - `Fetcher`: Network operations
@@ -43,7 +43,7 @@ The codebase follows a modular structure with clear separation of concerns:
 - `_test_proxy(proxy)`: Tests if a proxy works and measures latency
 - `get_working_proxies()`: Returns a list of working proxies
 - `refresh_proxies()`: Forces refresh of the proxy list
-- `get_random_proxy()`: Returns a random working proxy
+- `get_proxy()`: Returns the current "sticky" proxy or selects a new one if the current is invalid/blacklisted.
 - `remove_proxy(proxy)`: Blacklists and removes a proxy
 - `mark_proxy_failure(proxy, error_type)`: Records a proxy failure with categorization
 - `mark_proxy_success(proxy)`: Records a successful proxy usage
@@ -123,20 +123,20 @@ The codebase follows a modular structure with clear separation of concerns:
 
 ### 3.1 `results` Table
 
-| Column               | Type      | Description                                   |
-|----------------------|-----------|-----------------------------------------------|
-| title                | TEXT      | Paper title                                   |
-| authors              | TEXT      | Comma-separated list of authors               |
-| publication_info     | TEXT      | JSON with publication name and year           |
-| snippet              | TEXT      | Result snippet/abstract                       |
-| cited_by_count       | INTEGER   | Number of citations                           |
-| related_articles_url | TEXT      | URL to related articles                       |
-| article_url          | TEXT      | URL to the article page (UNIQUE)              |
-| pdf_url              | TEXT      | URL to PDF if available                       |
-| pdf_path             | TEXT      | Local path to downloaded PDF                  |
-| doi                  | TEXT      | Digital Object Identifier                     |
-| affiliations         | TEXT      | Comma-separated list of author affiliations   |
-| cited_by_url         | TEXT      | URL to "Cited by" page                        |
+| Column               | Type    | Description                                 |
+| -------------------- | ------- | ------------------------------------------- |
+| title                | TEXT    | Paper title                                 |
+| authors              | TEXT    | Comma-separated list of authors             |
+| publication_info     | TEXT    | JSON with publication name and year         |
+| snippet              | TEXT    | Result snippet/abstract                     |
+| cited_by_count       | INTEGER | Number of citations                         |
+| related_articles_url | TEXT    | URL to related articles                     |
+| article_url          | TEXT    | URL to the article page (UNIQUE)            |
+| pdf_url              | TEXT    | URL to PDF if available                     |
+| pdf_path             | TEXT    | Local path to downloaded PDF                |
+| doi                  | TEXT    | Digital Object Identifier                   |
+| affiliations         | TEXT    | Comma-separated list of author affiliations |
+| cited_by_url         | TEXT    | URL to "Cited by" page                      |
 
 ## 4. Command-Line Interface
 
@@ -148,9 +148,10 @@ usage: google_scholar_research_tool.py [-h] [-a AUTHORS] [-p PUBLICATION] [-l YE
 
 ### 5.1 Proxy Management
 
-- Free proxies have variable reliability
-- Proxy performance tracking helps select better proxies
-- Blacklisting prevents repeated use of failing proxies
+- Implements a "sticky" proxy strategy: reuses the same IP until it's blacklisted.
+- Free proxies have variable reliability, but the sticky strategy aims to maximize their utility.
+- Proxy performance tracking (success/failure rates, latency, CAPTCHA encounters) informs proxy selection and blacklisting.
+- Persistent blacklist (`proxy_blacklist.json`) prevents re-testing known bad proxies immediately.
 - Performance metrics include:
   - Success/failure counts
   - Average latency
@@ -194,6 +195,7 @@ usage: google_scholar_research_tool.py [-h] [-a AUTHORS] [-p PUBLICATION] [-l YE
 ## 7. Logging
 
 The system uses Python's logging module with configurable levels:
+
 - DEBUG: Detailed information for debugging
 - INFO: Confirmation of expected behavior
 - WARNING: Indication of potential issues

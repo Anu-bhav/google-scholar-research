@@ -38,7 +38,7 @@
     - **Layout Algorithms:** Choose from `spring`, `circular`, and `kamada_kawai` layouts for different graph perspectives.
     - **Centrality Filtering:** Focus visualizations on the most influential papers by filtering nodes based on their in-degree centrality.
 - **Robustness and Reliability:**
-  - **Smart Proxy Rotation:** Automatically switches proxies on failures (429, 403, connection errors). **Enhanced proxy management includes performance tracking for better proxy selection.**
+  - **Sticky Proxy Strategy:** Uses a single proxy IP for consecutive requests until it's blacklisted, then intelligently switches to a new one. This aims to improve stability and reduce CAPTCHA triggers. Includes performance tracking for better proxy selection and blacklist management.
   - **CAPTCHA Detection:** Identifies CAPTCHAs and pauses to avoid getting blocked.
   - **Error Handling:** Gracefully handles various network and parsing issues.
 - **Performance:**
@@ -164,7 +164,7 @@ python google_scholar_research_tool.py "<search query>" [options]
 
 - **Terms of Service:** Scraping Google Scholar may violate their Terms of Service. Use this tool responsibly and ethically. Google may block your IP address if you scrape too aggressively.
 - **CAPTCHA:** Google Scholar uses CAPTCHAs. This scraper has basic detection, but bypassing them reliably is difficult. Expect to encounter CAPTCHAs, especially with frequent or large-scale scraping.
-- **Proxies:** This tool uses _free_ proxies, which are often unreliable. For production use, _strongly_ consider using a reputable paid proxy service. **Note that the tool now includes proxy performance monitoring to better manage and select proxies, but the inherent limitations of free proxies still apply.**
+- **Proxies:** This tool uses _free_ proxies, which are often unreliable. The new "sticky" proxy strategy attempts to maximize the utility of each proxy, but for production use, _strongly_ consider using a reputable paid proxy service. The tool includes proxy performance monitoring and blacklist persistence to better manage and select proxies, but the inherent limitations of free proxies still apply.
 - **Rate Limiting:** The scraper includes delays to be respectful, but you may need to adjust the timing (`--min_delay`, `--max_delay` - _not yet implemented as CLI options, but present in code_) based on your usage.
 
 ## 📜 License

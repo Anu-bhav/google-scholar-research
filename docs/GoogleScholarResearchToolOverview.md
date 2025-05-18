@@ -11,7 +11,7 @@ The Google Scholar Research Tool is a comprehensive Python-based application des
 The system is built using a modular architecture with the following key components:
 
 1. **QueryBuilder**: Constructs properly formatted URLs for Google Scholar search queries
-2. **ProxyManager**: Manages a pool of proxies with performance tracking and rotation
+2. **ProxyManager**: Manages a pool of proxies using a "sticky" strategy (reuses an IP until blacklisted), with performance tracking, blacklist persistence, and rotation.
 3. **Parser**: Extracts structured data from Google Scholar search result pages
 4. **AuthorProfileParser**: Extracts data from Google Scholar author profile pages
 5. **Fetcher**: Handles all HTTP operations with error handling and retry logic
@@ -23,7 +23,7 @@ The system is built using a modular architecture with the following key componen
 
 1. User provides search parameters via command-line interface
 2. QueryBuilder constructs appropriate Google Scholar URL
-3. Fetcher obtains proxy from ProxyManager and makes HTTP request
+3. Fetcher obtains a "sticky" proxy from ProxyManager and makes HTTP requests; ProxyManager handles IP reuse and rotation upon blacklisting.
 4. Parser or AuthorProfileParser extracts structured data from HTML response
 5. DataHandler stores extracted data in SQLite database
 6. Optional: PDF downloading for available articles
@@ -35,12 +35,13 @@ The system is built using a modular architecture with the following key componen
 The system implements a robust error handling hierarchy:
 
 1. **Custom Exceptions**:
+
    - `CaptchaException`: For CAPTCHA detection events
    - `ParsingException`: For HTML parsing failures
    - `NoProxiesAvailable`: When proxy pool is exhausted
 
 2. **Recovery Mechanisms**:
-   - Proxy rotation on failure
+   - "Sticky" proxy usage with rotation on failure/blacklisting
    - Exponential backoff for retries
    - Performance tracking to prioritize reliable proxies
    - Graceful degradation for unavailable data elements
@@ -50,6 +51,7 @@ The system implements a robust error handling hierarchy:
 ### 3.1 Functional Requirements
 
 1. **Search Capabilities**:
+
    - Basic keyword search
    - Author-specific search
    - Publication-specific search
@@ -60,12 +62,14 @@ The system implements a robust error handling hierarchy:
    - Citation count filtering
 
 2. **Author Profile Analysis**:
+
    - Author details extraction (name, affiliation, interests)
    - Co-authors list retrieval
    - Citation metrics (h-index, i10-index)
    - Publications list with metadata
 
 3. **Data Collection**:
+
    - PDF downloading with multiple fallback methods
    - Citation network building
    - Structured data extraction for academic papers
@@ -78,13 +82,15 @@ The system implements a robust error handling hierarchy:
 ### 3.2 Non-Functional Requirements
 
 1. **Performance**:
+
    - Asynchronous operations for high concurrency
    - Progress tracking with real-time statistics
    - Estimated time remaining calculation
 
 2. **Robustness**:
+
    - CAPTCHA detection
-   - Smart proxy rotation
+   - "Sticky" proxy strategy with intelligent rotation and blacklist management
    - Retry mechanisms
    - Error handling and logging
 
@@ -116,12 +122,14 @@ The system implements a robust error handling hierarchy:
 ## 5. Constraints and Limitations
 
 1. **Legal and Ethical**:
+
    - Google Scholar Terms of Service compliance concerns
    - Academic publication copyright considerations
 
 2. **Technical**:
+
    - CAPTCHA challenges may interrupt scraping
-   - Free proxies are often unreliable
+   - Free proxies are often unreliable, though the "sticky" strategy and performance tracking aim to maximize their utility.
    - Google Scholar's HTML structure may change
    - Rate limiting by Google's servers
 

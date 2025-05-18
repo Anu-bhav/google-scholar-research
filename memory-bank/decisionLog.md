@@ -20,6 +20,22 @@ This file records architectural and implementation decisions using a list format
 
 ## Decision
 
+[2025-05-18 16:12:00] - Extended proxy usage in `Fetcher.scrape_pdf_link`.
+
+## Rationale
+
+To ensure consistent network behavior and benefit from proxy rotation/management for all external calls, the `scrape_pdf_link` method was modified. Previously, it made direct requests to Unpaywall and publisher sites.
+
+## Implementation Details
+
+- The Unpaywall API request within `scrape_pdf_link` now uses `self.proxy_manager.get_proxy()` and includes retry logic with proxy success/failure reporting.
+- The subsequent request to the publisher's page (obtained from Unpaywall's `doi_url`) is now made using `await self.fetch_page(paper_url)`. The `fetch_page` method already incorporates the proxy manager and its associated logic (sticky proxy, retries, CAPTCHA handling).
+- Corrected type hint for `request_args_unpaywall` to `Dict[str, Any]` and ensured `Any` is imported from `typing`.
+- Ensured `timeout` for `aiohttp.ClientSession.get` is passed as a separate keyword argument, not as part of the `**request_args_unpaywall` dictionary, to resolve Pylance errors.
+- ***
+
+## Decision
+
 [2025-05-18 16:00:00] - Modified `ProxyManager` to use a "sticky" proxy strategy.
 
 ## Rationale

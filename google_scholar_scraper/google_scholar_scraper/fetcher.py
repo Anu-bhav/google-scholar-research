@@ -5,7 +5,7 @@ import os
 import random
 import re
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import aiohttp
 from parsel import Selector
@@ -342,75 +342,126 @@ class Fetcher:
             "Referer": "https://scholar.google.com",
         }
         unpaywall_url = f"https://api.unpaywall.org/v2/{doi}?email=unpaywall@impactstory.org"
+        unpaywall_retries = 3  # Max retries for Unpaywall API
 
         await self._create_client()
         assert self.client is not None, "Client session must be initialized by _create_client"
 
         try:
             pdf_url = None  # Initialize pdf_url here
-            # First, try Unpaywall
-            async with self.client.get(unpaywall_url, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                response.raise_for_status()
-                data = await response.json()
-                paper_url = data.get("doi_url")  # This is the publisher's page for the article
+            paper_url = None  # Initialize paper_url
 
-                if data.get("is_oa") and data.get("best_oa_location") and data["best_oa_location"].get("url_for_pdf"):
-                    pdf_url = data["best_oa_location"]["url_for_pdf"]
-                    self.logger.info(f"Found OA PDF URL via Unpaywall best_oa_location: {pdf_url} for DOI: {doi}")
-                    return pdf_url
+            for attempt in range(unpaywall_retries):
+                proxy = await self.proxy_manager.get_proxy()
+                proxy_url_unpaywall = f"http://{proxy}" if proxy else None
+                # Initialize request_args for Unpaywall with headers
+                request_args_unpaywall: Dict[str, Any] = {"headers": headers}
+                if proxy_url_unpaywall:
+                    request_args_unpaywall["proxy"] = proxy_url_unpaywall
+                    request_args_unpaywall["ssl"] = False  # For proxies
 
-                # If Unpaywall didn't give a direct PDF, or if it's not OA, try scraping the paper_url
-                if not paper_url:
-                    self.logger.warning(f"Unpaywall did not provide a doi_url (publisher page) for DOI: {doi}")
-                    return None  # Cannot proceed to scrape publisher page
+                unpaywall_timeout = aiohttp.ClientTimeout(total=10)
 
-                self.logger.info(f"Paper is_oa: {data.get('is_oa')}. Publisher page: {paper_url}. Attempting to scrape for PDF.")
+                try:
+                    # Pass timeout separately
+                    async with self.client.get(unpaywall_url, timeout=unpaywall_timeout, **request_args_unpaywall) as response:
+                        response.raise_for_status()
+                        data = await response.json()
+                        paper_url = data.get("doi_url")
 
-            # Scrape the publisher page (paper_url from Unpaywall)
-            async with self.client.get(paper_url, headers=headers, timeout=aiohttp.ClientTimeout(total=20)) as response:
-                response.raise_for_status()
-                self.logger.info(f"Final URL after redirect from publisher page: {response.url}")
-                final_url_str = str(response.url)  # Use a consistent variable name
-                html_content = await response.text()
-                selector = Selector(text=html_content)
+                        if data.get("is_oa") and data.get("best_oa_location") and data["best_oa_location"].get("url_for_pdf"):
+                            pdf_url = data["best_oa_location"]["url_for_pdf"]
+                            self.logger.info(f"Found OA PDF URL via Unpaywall: {pdf_url} for DOI: {doi} (Proxy: {proxy})")
+                            if proxy:
+                                self.proxy_manager.mark_proxy_success(proxy)
+                            return pdf_url
 
-                # Try common meta tag
-                meta_pdf_url = selector.xpath("//meta[@name='citation_pdf_url']/@content").get()
-                if meta_pdf_url:
-                    self.logger.info(f"Found PDF URL in meta tag: {meta_pdf_url}")
-                    return meta_pdf_url
+                        # If Unpaywall didn't give a direct PDF, but gave a paper_url, break to use it
+                        if proxy:
+                            self.proxy_manager.mark_proxy_success(
+                                proxy
+                            )  # Mark success even if no direct PDF, if request succeeded
+                        break  # Successfully fetched from Unpaywall, proceed with paper_url
 
-                # Site-specific scraping logic (ensure final_url_str is used)
-                # (Keep existing site-specific logic, ensuring it uses final_url_str and response.url.join correctly)
-                for link_tag in selector.xpath("//a[@href]"):  # Iterate over link tags
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    self.logger.warning(
+                        f"Unpaywall attempt {attempt + 1}/{unpaywall_retries} failed for DOI {doi}: {type(e).__name__}: {e} (Proxy: {proxy})"
+                    )
+                    error_type_to_mark = ProxyErrorType.OTHER
+                    if isinstance(e, asyncio.TimeoutError):
+                        error_type_to_mark = ProxyErrorType.TIMEOUT
+                    elif isinstance(e, aiohttp.ClientProxyConnectionError):
+                        error_type_to_mark = ProxyErrorType.CONNECTION
+                    if proxy:
+                        self.proxy_manager.mark_proxy_failure(proxy, error_type_to_mark)
+
+                    if attempt == unpaywall_retries - 1:
+                        self.logger.error(f"All {unpaywall_retries} Unpaywall attempts failed for DOI {doi}.")
+                        if proxy:
+                            self.proxy_manager.remove_proxy(proxy)
+                        # Do not return yet, try scraping publisher page if paper_url was ever found
+                    else:
+                        await asyncio.sleep(random.uniform(1, 3))  # Shorter delay for API retries
+                except NoProxiesAvailable:
+                    self.logger.error(f"No proxies available for Unpaywall request for DOI {doi}.")
+                    # Do not return yet, try scraping publisher page if paper_url was ever found
+                    break  # Break from Unpaywall attempts
+
+            # If Unpaywall didn't give a direct PDF, or if it's not OA, or Unpaywall failed but we got a paper_url
+            if not paper_url:
+                self.logger.warning(
+                    f"Unpaywall did not provide a doi_url (publisher page) for DOI: {doi}, or Unpaywall fetch failed."
+                )
+                return None  # Cannot proceed to scrape publisher page
+
+            self.logger.info(f"Attempting to scrape publisher page: {paper_url} for PDF for DOI: {doi}.")
+
+            # Scrape the publisher page (paper_url from Unpaywall) using fetch_page for proxy handling
+            html_content = await self.fetch_page(paper_url)  # fetch_page handles its own proxy logic
+
+            if not html_content:
+                self.logger.warning(f"Failed to fetch publisher page {paper_url} for DOI {doi}.")
+                return None
+
+            # Re-creating a Selector object from the fetched HTML content
+            selector = Selector(text=html_content)
+
+            # Try common meta tag
+            meta_pdf_url = selector.xpath("//meta[@name='citation_pdf_url']/@content").get()
+            if meta_pdf_url:
+                self.logger.info(f"Found PDF URL in meta tag: {meta_pdf_url}")
+                return meta_pdf_url
+
+                # Site-specific scraping logic
+                # We need to use the original paper_url for joining relative links,
+                # as fetch_page doesn't easily provide the final redirected URL.
+                base_url_for_joining = URL(paper_url)
+
+                for link_tag in selector.xpath("//a[@href]"):
                     href = link_tag.xpath("@href").get()
                     if not href:
                         continue
 
                     # Nature
-                    if "nature.com" in final_url_str:
-                        if "/articles/" in href and href.endswith(".pdf"):  # Common pattern
-                            return str(response.url.join(URL(href)))
-                        if "/content/pdf/" in href and href.endswith(".pdf"):  # Another common pattern
-                            return str(response.url.join(URL(href)))
-                    # Add other site-specific patterns here if needed, e.g., ScienceDirect, IEEE
-                    if "sciencedirect.com" in final_url_str:
-                        pdf_url_attr = link_tag.xpath("@pdfurl").get()  # Check for specific attribute
+                    if "nature.com" in paper_url:  # Check against original paper_url domain
+                        if "/articles/" in href and href.endswith(".pdf"):
+                            return str(base_url_for_joining.join(URL(href)))
+                        if "/content/pdf/" in href and href.endswith(".pdf"):
+                            return str(base_url_for_joining.join(URL(href)))
+                    # ScienceDirect
+                    if "sciencedirect.com" in paper_url:
+                        pdf_url_attr = link_tag.xpath("@pdfurl").get()
                         if pdf_url_attr:
-                            return str(response.url.join(URL(pdf_url_attr)))
-                        if "pdf" in href.lower() and "download" in href.lower():  # General pattern
-                            return str(response.url.join(URL(href)))
-                    if "ieeexplore.ieee.org" in final_url_str:
-                        # The regex for embedded JSON might be too specific, general link finding is better
-                        if "/stamp/stamp.jsp" in href and "arnumber=" in href:  # Often leads to PDF
-                            # This might require another hop or JavaScript, harder to get directly
-                            self.logger.info(f"Found IEEE stamp link, might be PDF: {href}")
+                            return str(base_url_for_joining.join(URL(pdf_url_attr)))
+                        if "pdf" in href.lower() and "download" in href.lower():
+                            return str(base_url_for_joining.join(URL(href)))
+                    # IEEE
+                    if "ieeexplore.ieee.org" in paper_url:
                         if href.endswith(".pdf") and "document" in href.lower():
-                            return str(response.url.join(URL(href)))
+                            return str(base_url_for_joining.join(URL(href)))
 
-                # Generic PDF link patterns (as a fallback)
-                # Ensure this part is robust and doesn't pick wrong links
-                PDF_PATTERNS = [".pdf", "/pdf/", "download", "fulltext"]  # Simplified and common
+                # Generic PDF link patterns
+                PDF_PATTERNS = [".pdf", "/pdf/", "download", "fulltext"]
                 links = selector.css("a::attr(href)").getall()
 
                 # Prioritize links containing the DOI or parts of it, or common keywords
@@ -419,31 +470,30 @@ class Fetcher:
                 for link_text in links:
                     link_lower = link_text.lower()
                     if any(pattern in link_lower for pattern in PDF_PATTERNS):
-                        # Further heuristics could be added here, e.g., link text
-                        # For now, take the first plausible one
-                        candidate_url = str(response.url.join(URL(link_text)))
-                        if ".pdf" in candidate_url.lower():  # Prefer direct .pdf links
+                        candidate_url = str(base_url_for_joining.join(URL(link_text)))
+                        if ".pdf" in candidate_url.lower():
                             self.logger.info(f"Found generic PDF pattern match: {candidate_url}")
                             return candidate_url
                         if not best_candidate:
-                            best_candidate = candidate_url  # Store first plausible non-.pdf link
+                            best_candidate = candidate_url
 
                 if best_candidate:
                     self.logger.info(f"Found plausible generic link (non-direct .pdf): {best_candidate}")
                     return best_candidate
 
-                self.logger.warning(
-                    f"No PDF link found on publisher page {final_url_str} for DOI {doi} after trying all methods."
-                )
+                self.logger.warning(f"No PDF link found on publisher page {paper_url} for DOI {doi} after trying all methods.")
                 return None
 
-        except aiohttp.ClientResponseError as e:
+        except aiohttp.ClientResponseError as e:  # This will catch errors from fetch_page if it raises them
             self.logger.error(
-                f"HTTP error scraping PDF link for DOI {doi} (URL: {e.request_info.url if e.request_info else 'N/A'}): {e.status} {e.message}"
+                f"HTTP error during scrape_pdf_link for DOI {doi} (URL: {e.request_info.url if e.request_info else 'N/A'}): {e.status} {e.message}"
             )
             return None
-        except aiohttp.ClientError as e:  # Catch other client errors like connection issues
-            self.logger.error(f"Client error scraping PDF link for DOI {doi}: {e}")
+        except aiohttp.ClientError as e:
+            self.logger.error(f"Client error during scrape_pdf_link for DOI {doi}: {e}")
+            return None
+        except NoProxiesAvailable:  # Catch if fetch_page or proxy_manager.get_proxy raises this
+            self.logger.error(f"No proxies available during scrape_pdf_link for DOI {doi}.")
             return None
         except Exception as e:
             self.logger.exception(f"An unexpected error occurred scraping PDF link for DOI {doi}: {e}")
