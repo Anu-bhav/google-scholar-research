@@ -8,11 +8,10 @@ import random
 import pandas as pd
 from tqdm import tqdm
 
-from .data_handler import DataHandler
-from .exceptions import NoProxiesAvailable
-from .fetcher import Fetcher
-from .graph_builder import GraphBuilder
-from .proxy_manager import NoProxiesAvailable, ProxyManager
+from google_scholar_scraper.data_handler import DataHandler
+from google_scholar_scraper.fetcher import Fetcher
+from google_scholar_scraper.graph_builder import GraphBuilder
+from google_scholar_scraper.proxy_manager import NoProxiesAvailable, ProxyManager
 
 
 async def main():
@@ -31,7 +30,13 @@ async def main():
     parser.add_argument(
         "--log_level", default="DEBUG", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], help="Logging level."
     )  # Added log level argument
-
+    parser.add_argument("--download_pdfs", action="store_true", help="Automatically download PDFs for results.")
+    parser.add_argument(
+        "--num_pages",
+        type=int,
+        default=None,
+        help="Number of pages to scrape (overrides --num_results if set). Each page has up to 10 results.",
+    )
     # --- Advanced Search Options ---
     parser.add_argument("--phrase", help="Search for an exact phrase.", default=None)
     parser.add_argument("--exclude", help="Exclude keywords (comma-separated).", default=None)
@@ -52,11 +57,18 @@ async def main():
 
     args = parser.parse_args()
 
+    # --- Adjust num_results based on num_pages if provided ---
+    if args.num_pages is not None:
+        if args.num_pages <= 0:
+            parser.error("Error: --num_pages must be a positive integer.")
+        args.num_results = args.num_pages * 10
+        logging.info(f"--num_pages set to {args.num_pages}, overriding --num_results to {args.num_results}.")
+
     # --- Input Validation ---
     if not args.query and not args.author_profile:
         parser.error("Error: Either a query or --author_profile must be provided.")
-    if args.num_results <= 0:
-        parser.error("Error: --num_results must be a positive integer.")
+    if args.num_results <= 0:  # This validation remains important
+        parser.error("Error: --num_results (derived or direct) must be a positive integer.")
     if args.max_depth < 0:
         parser.error("Error: --max_depth cannot be negative.")
     if args.year_low is not None and not (1000 <= args.year_low <= 2100):
@@ -98,7 +110,7 @@ async def main():
                         df.to_csv(args.output, index=False)
                     except IOError as e:
                         logging.error(f"Error saving to CSV file '{args.output}': {e}", exc_info=True)
-                        print(f"Error saving to CSV file. Check logs for details.")
+                        print("Error saving to CSV file. Check logs for details.")
                         return
                 print(f"Author profile data saved to {args.output}")
 
@@ -120,7 +132,7 @@ async def main():
                                 logging.error(
                                     f"Error saving recursive results to JSON file 'recursive_{args.output}': {e}", exc_info=True
                                 )
-                                print(f"Error saving recursive results to JSON file. Check logs.")
+                                print("Error saving recursive results to JSON file. Check logs.")
                         else:
                             df_recursive = pd.DataFrame(recursive_results)
                             try:  # Output file error handling for recursive results CSV
@@ -129,7 +141,7 @@ async def main():
                                 logging.error(
                                     f"Error saving recursive results to CSV file 'recursive_{args.output}': {e}", exc_info=True
                                 )
-                                print(f"Error saving recursive results to CSV file. Check logs.")
+                                print("Error saving recursive results to CSV file. Check logs.")
                         print(f"Recursive publication details saved to recursive_{args.output}")
                     else:
                         print("No publication details found during recursive scraping.")
@@ -152,6 +164,7 @@ async def main():
                 title=args.title,
                 author=args.author,
                 source=args.source,
+                download_pdfs=args.download_pdfs,
             )
 
             # --- Data Filtering (Add this section) ---
@@ -163,14 +176,14 @@ async def main():
                     data_handler.save_to_json(results, args.output)
                 except IOError as e:
                     logging.error(f"Error saving to JSON file '{args.output}': {e}", exc_info=True)
-                    print(f"Error saving to JSON file. Check logs for details.")
+                    print("Error saving to JSON file. Check logs for details.")
                     return
             else:
                 try:  # Output file error handling
                     data_handler.save_to_csv(results, args.output)
                 except IOError as e:
                     logging.error(f"Error saving to CSV file '{args.output}': {e}", exc_info=True)
-                    print(f"Error saving to CSV file. Check logs for details.")
+                    print("Error saving to CSV file. Check logs for details.")
                     return
             logging.info(f"Successfully scraped and saved {len(results)} results in {args.output}")
 
@@ -182,6 +195,18 @@ async def main():
                 base_filename=args.graph_file.replace(".graphml", "")
             )  # Generate default visualizations
             print(f"Citation graph visualizations saved to {graph_builder.output_folder} folder")
+
+            # --- Print all results from DB ---
+            if results:  # Only print if we got some results
+                print("\n--- All Scraped Results from Database ---")
+                all_db_results = await data_handler.get_all_results()
+                if all_db_results:
+                    for res_idx, res_item in enumerate(all_db_results):
+                        print(f"\nResult {res_idx + 1}:")
+                        for key, value in res_item.items():
+                            print(f"  {key}: {value}")
+                else:
+                    print("No results found in the database to display.")
 
     except Exception as e:  # Top-level exception handler for any unhandled errors
         logging.critical(f"Unhandled exception in main(): {e}", exc_info=True)  # Log critical error with traceback

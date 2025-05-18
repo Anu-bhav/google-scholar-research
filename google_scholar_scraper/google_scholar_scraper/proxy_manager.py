@@ -4,20 +4,28 @@ import logging
 import random
 import time
 import urllib.parse
-from typing import Callable, List, Optional
+from typing import List, Optional
 
 import aiohttp
 from fp.fp import FreeProxy
 
-from .exceptions import NoProxiesAvailable
-from .models import ProxyErrorType  # Make sure this import is correct based on your project structure
+from google_scholar_scraper.exceptions import NoProxiesAvailable
+from google_scholar_scraper.models import ProxyErrorType  # Make sure this import is correct based on your project structure
 
 
 class ProxyManager:
     def __init__(
-        self, timeout=5, refresh_interval=300, blacklist_duration=600, num_proxies=20, blacklist_file="proxy_blacklist.json"
+        self,
+        timeout=5,
+        refresh_interval=300,
+        blacklist_duration=600,
+        num_proxies=20,
+        blacklist_file="proxy_blacklist.json",
+        debug_mode: bool = False,
+        force_direct_connection: bool = False,
     ):
-        """Initializes the ProxyManager.
+        """
+        Initializes the ProxyManager.
 
         Args:
             timeout (int): Timeout for proxy testing requests in seconds. Defaults to 5.
@@ -25,6 +33,8 @@ class ProxyManager:
             blacklist_duration (int): Duration in seconds to blacklist a proxy after failure. Defaults to 600 (10 minutes).
             num_proxies (int): Number of working proxies to keep in the list. Defaults to 20.
             blacklist_file (str): Filename for persistent blacklist JSON file. Defaults to "proxy_blacklist.json".
+            debug_mode (bool): If True, enables debug behaviors like bypassing proxy fetching. Defaults to False.
+            force_direct_connection (bool): If True, forces all proxy requests to return None, effectively using direct IP. Defaults to False.
 
         """
         self.logger = logging.getLogger(__name__)
@@ -32,13 +42,16 @@ class ProxyManager:
         self.proxy_list = []
         self.blacklist = {}
         self.blacklist_file = blacklist_file
-        self._load_blacklist()  # Load blacklist from file at initialization
         self.refresh_interval = refresh_interval
         self.blacklist_duration = blacklist_duration
+        self.debug_mode = debug_mode  # Existing debug_mode flag
+        self.force_direct_connection = force_direct_connection  # New flag
         self.last_refresh = 0
         self.num_proxies = num_proxies
         self.timeout = timeout
+        self.debug_mode = debug_mode  # Store the debug_mode flag
         self.test_url = "https://scholar.google.com/"
+        self._load_blacklist()  # Load blacklist from file at initialization
 
         # Proxy Performance Monitoring Data
         self.proxy_performance = {}  # {proxy: {successes: int, failures: int, timeouts: int, captchas: int, connection_errors: int, last_latency: float, request_count: int, last_used: float}}
@@ -93,6 +106,15 @@ class ProxyManager:
         connect_host = parsed_url.hostname
         connect_port = parsed_url.port if parsed_url.port else 443
 
+        if connect_host is None:
+            self.logger.error(
+                f"Could not determine hostname from test_url: {connect_url} when testing proxy {proxy}. Skipping proxy."
+            )
+            return None
+
+        # Now connect_host is confirmed to be a string
+        request_headers = {"Host": connect_host}
+
         self._initialize_proxy_stats(proxy)  # Initialize stats when testing a proxy
 
         start_time = time.monotonic()  # Start time for latency measurement
@@ -104,7 +126,7 @@ class ProxyManager:
                         "CONNECT",
                         f"http://{connect_host}:{connect_port}",
                         proxy=proxy_url,
-                        headers={"Host": connect_host},
+                        headers=request_headers,
                     ) as conn_response:
                         conn_response.raise_for_status()
                         self.logger.debug(f"CONNECT tunnel established via {proxy}")
@@ -112,7 +134,7 @@ class ProxyManager:
                         async with session.get(
                             connect_url,
                             ssl=True,
-                            headers={"Host": connect_host},
+                            headers=request_headers,
                         ) as get_response:
                             get_response.raise_for_status()
                             end_time = time.monotonic()  # End time for latency measurement
@@ -134,6 +156,21 @@ class ProxyManager:
 
     async def get_working_proxies(self) -> List[str]:
         """Fetch, test, and return a list of working proxies."""
+        if self.force_direct_connection:
+            self.logger.info("Forcing direct connection: get_working_proxies will return an empty list.")
+            self.proxy_list = []
+            self.last_refresh = time.time()
+            return self.proxy_list
+
+        if self.debug_mode:
+            # --- DEBUG: Bypass proxy fetching and testing ---
+            self.logger.warning("DEBUG MODE: Bypassing proxy fetching in get_working_proxies.")
+            self.proxy_list = []
+            self.last_refresh = time.time()
+            return self.proxy_list
+            # --- END DEBUG ---
+
+        # Original logic follows if not in debug mode:
         current_time = time.time()
         if current_time - self.last_refresh < self.refresh_interval and self.proxy_list:
             return self.proxy_list  # Return cached proxies if within refresh interval
@@ -168,23 +205,46 @@ class ProxyManager:
 
     async def get_random_proxy(self) -> Optional[str]:
         """Return a random working proxy, updating usage stats."""
+        if self.force_direct_connection:
+            self.logger.info("Forcing direct connection: get_random_proxy returning None.")
+            return None
+
+        if self.debug_mode:
+            # --- DEBUG: Force no proxy ---
+            self.logger.warning("DEBUG MODE: Forcing direct connection (no proxy).")
+            return None
+            # --- END DEBUG ---
+
+        # Original logic if not in debug mode:
         try:
             if not self.proxy_list:
-                if time.time() - self.last_refresh > self.refresh_interval:
+                current_time = time.time()
+                if current_time - self.last_refresh > self.refresh_interval:
+                    self.logger.info("Proxy list empty and refresh interval passed, refreshing proxies in get_random_proxy.")
                     await self.refresh_proxies()
-                elif not self.proxy_list:  # Check again after normal condition, if still empty, force refresh
-                    self.logger.warning("Proxy list is empty after normal refresh interval, forcing refresh...")
-                    await self.refresh_proxies()
-                if not self.proxy_list:  # Double check if list is still empty after refresh attempts.
-                    raise NoProxiesAvailable("No working proxies available after refresh.")
+                # Check again if list is still empty after potential refresh
+                if not self.proxy_list:
+                    self.logger.warning("Proxy list still empty after checking refresh interval, forcing refresh attempt.")
+                    await self.refresh_proxies()  # Attempt refresh one more time if it's critical
 
+                if not self.proxy_list:  # Final check
+                    self.logger.error("No working proxies available even after refresh attempts in get_random_proxy.")
+                    raise NoProxiesAvailable("No working proxies available after refresh attempts.")
+
+            # If we have proxies after all checks and potential refreshes
             if self.proxy_list:
                 proxy = random.choice(self.proxy_list)
-                self.proxy_performance[proxy]["last_used"] = time.time()  # Record last used time
-                self.proxy_performance[proxy]["request_count"] += 1  # Increment request count
+                self._initialize_proxy_stats(proxy)  # Ensure stats are initialized
+                self.proxy_performance[proxy]["last_used"] = time.time()
+                self.proxy_performance[proxy]["request_count"] += 1
                 return proxy
+
+            # This path should ideally not be reached if NoProxiesAvailable was raised correctly above.
+            # However, as a fallback or if the list became empty through other means unexpectedly.
+            self.logger.warning("get_random_proxy: proxy_list is empty when trying to select a proxy, returning None.")
             return None
         except NoProxiesAvailable:
+            self.logger.warning("NoProxiesAvailable caught in get_random_proxy, returning None.")
             return None
 
     def remove_proxy(self, proxy: str):

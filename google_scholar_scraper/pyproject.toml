@@ -10,18 +10,18 @@ version = "0.1.0"
 description = "A Python tool for scraping and analyzing data from Google Scholar, including advanced search, author profiles, citation networks, and PDF downloading."
 readme = "README.md" # Point to your README file
 authors = [
-    { name = "Anubhavsingh Sawdagur", github = "https://github.com/Anu-bhav" }
+    { name = "Anubhavsingh Sawdagur", email = "anubhav@example.com" } # Assuming a placeholder email, user can change later
 ]
 maintainers = [ # Optional, if maintainers are different from authors
-    { name = "Anubhavsingh Sawdagur", github = "https://github.com/Anu-bhav" }
+    { name = "Anubhavsingh Sawdagur", email = "anubhav@example.com" } # Assuming a placeholder email, user can change later
 ]
-license = { text = "MIT License" } # Or specify file = "LICENSE" if you have a LICENSE file in project root
+license = "MIT" # Changed to SPDX identifier string
 keywords = ["google-scholar", "scraper", "academic", "research", "citation", "pdf", "data-extraction"]
 classifiers = [
     "Development Status :: 3 - Alpha", # Or "4 - Beta", "5 - Production/Stable" as project matures
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+# Removed deprecated license classifier: "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -34,7 +34,6 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP ::爬虫" # Added Chinese classifier for web scraping (optional, but shows consideration for broader audience if applicable)
 ]
 requires-python = ">=3.8" # Specify minimum Python version
-
 dependencies = [
     "aiohttp",
     "aiosqlite",
@@ -44,7 +43,8 @@ dependencies = [
     "free-proxy",
     "parsel",
     "tqdm",
-    "matplotlib" # Added matplotlib for graph visualization
+    "matplotlib", # Added matplotlib for graph visualization
+    "scipy" # Added for networkx graph layouts
 ]
 
 [project.scripts]
@@ -55,3 +55,21 @@ scholar-scraper = "google_scholar_scraper.main:main" # Corrected entry point to 
 "Bug Tracker" = "https://github.com/Anu-bhav/google-scholar-research/issues" # Replace with your issue tracker URL
 "Documentation" = "https://github.com/Anu-bhav/google-scholar-research/blob/main/README.md" # Replace if you have documentation hosted
 "Source Code" = "https://github.com/Anu-bhav/google-scholar-research" # Replace with your repo URL
+
+[project.optional-dependencies]
+test = [
+    "pytest==7.4.0",
+    "pytest-cov==4.1.0",
+    "pytest-asyncio==0.21.1",
+    "aioresponses",
+    "mock==5.1.0",
+    "numpy", # Was in requirements-test.txt, good to have for test environment consistency
+]
+
+[tool.setuptools]
+packages = ["google_scholar_scraper"]
+[tool.pytest.ini_options]
+markers = [
+    "live_network: marks tests that require live network access and may be flaky (deselect with -m 'not live_network')",
+]
+asyncio_mode = "auto" # Or "strict", depending on desired default for pytest-asyncio

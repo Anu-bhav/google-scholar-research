@@ -1,12 +1,14 @@
 # utils.py
 import random
 import re
+from typing import Optional  # Added Optional
 
 from fake_useragent import UserAgent
 
 
 def get_random_delay(min_delay=2, max_delay=5):
-    """Generates a random delay between min_delay and max_delay seconds.
+    """
+    Generates a random delay between min_delay and max_delay seconds.
 
     This function is used to introduce delays between requests to avoid
     overloading servers and to mimic human-like browsing behavior, which can help
@@ -24,7 +26,8 @@ def get_random_delay(min_delay=2, max_delay=5):
 
 
 def get_random_user_agent():
-    """Returns a random user agent string using the fake-useragent library.
+    """
+    Returns a random user agent string using the fake-useragent library.
 
     This function fetches a random user agent string, simulating different web browsers
     and operating systems.  Using a variety of user agents helps to avoid
@@ -38,20 +41,23 @@ def get_random_user_agent():
     return ua.random
 
 
-def detect_captcha(html_content: str) -> bool:
-    """Detects CAPTCHA indicators in HTML content using regular expressions.
+def detect_captcha(html_content: Optional[str]) -> bool:
+    """
+    Detects CAPTCHA indicators in HTML content using regular expressions.
 
     This function searches for common patterns and phrases within the HTML content
     that are indicative of a CAPTCHA challenge page. CAPTCHA detection is crucial
     for web scraping to identify when anti-bot measures are triggered.
 
     Args:
-        html_content (str): The HTML content (as a string) to analyze for CAPTCHA indicators.
+        html_content (Optional[str]): The HTML content (as a string) to analyze for CAPTCHA indicators.
 
     Returns:
         bool: True if CAPTCHA is detected in the HTML content, False otherwise.
 
     """
+    if not html_content:  # Handle None or empty string gracefully
+        return False
     captcha_patterns = [
         r"prove\s+you'?re\s+human",
         r"verify\s+you'?re\s+not\s+a\s+robot",

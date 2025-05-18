@@ -1,8 +1,9 @@
-import urllib
+import urllib.parse
 
 
 class QueryBuilder:
-    """Builds URLs for Google Scholar searches and author profiles.
+    """
+    Builds URLs for Google Scholar searches and author profiles.
 
     Attributes:
         base_url (str): The base URL for Google Scholar search.
@@ -10,7 +11,8 @@ class QueryBuilder:
     """
 
     def __init__(self, base_url="https://scholar.google.com/scholar"):
-        """Initializes the QueryBuilder with a base URL.
+        """
+        Initializes the QueryBuilder with a base URL.
 
         Args:
             base_url (str, optional): The base URL for Google Scholar.
@@ -33,7 +35,8 @@ class QueryBuilder:
         author=None,
         source=None,
     ):
-        """Builds a Google Scholar search URL based on provided parameters.
+        """
+        Builds a Google Scholar search URL based on provided parameters.
 
         Args:
             query (str, optional): The main search query. Defaults to None.
@@ -68,12 +71,12 @@ class QueryBuilder:
         }
 
         # Build the main query string
+        query_parts = []  # Initialize query_parts outside the if query block
         if query:
-            query_parts = []
-            if phrase:
-                query_parts.append(f'"{phrase}"')  # Enclose phrase in quotes
-            else:
-                query_parts.append(query)
+            query_parts.append(query)  # Always add the main query if it exists
+
+        if phrase:  # Add phrase if it exists
+            query_parts.append(f'"{phrase}"')
 
             if exclude:
                 excluded_terms = " ".join([f"-{term}" for term in exclude.split(",")])
@@ -86,7 +89,13 @@ class QueryBuilder:
             if source:
                 query_parts.append(f"source:{source}")
 
+        # Only set params["q"] if query_parts is not empty
+        if query_parts:
             params["q"] = " ".join(query_parts)
+        elif not any([authors, publication, year_low, year_high]):  # If no other search terms, q might be needed for empty search
+            # This case might need specific handling if an "empty" search is intended to show all articles (unlikely for Scholar)
+            # For now, if query_parts is empty and no other specific field searches, q will not be set.
+            pass
 
         if authors:
             params["as_sauthors"] = authors
@@ -99,7 +108,8 @@ class QueryBuilder:
         return f"{self.base_url}?{urllib.parse.urlencode(params)}"
 
     def build_author_profile_url(self, author_id):
-        """Builds the URL for an author's profile page.
+        """
+        Builds the URL for an author's profile page.
 
         Args:
             author_id (str): The Google Scholar ID of the author.

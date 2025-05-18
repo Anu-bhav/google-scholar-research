@@ -1,22 +1,23 @@
 # data_handler.py
-import asyncio
 import json
 import logging
 import sqlite3
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import aiosqlite
 import pandas as pd
 
 
 class DataHandler:
-    """Handles data storage and retrieval operations for scraped Google Scholar results.
+    """
+    Handles data storage and retrieval operations for scraped Google Scholar results.
 
     Supports saving data to an SQLite database, CSV files, and JSON files.
     """
 
     def __init__(self, db_name="scholar_data.db"):
-        """Initializes the DataHandler with a database name.
+        """
+        Initializes the DataHandler with a database name.
 
         Args:
             db_name (str, optional): The name of the SQLite database file.
@@ -27,7 +28,8 @@ class DataHandler:
         self.logger = logging.getLogger(__name__)
 
     async def create_table(self):
-        """Creates the 'results' table in the SQLite database if it doesn't exist.
+        """
+        Creates the 'results' table in the SQLite database if it doesn't exist.
 
         The table schema includes fields for title, authors, publication info, snippet,
         citation counts, URLs, PDF information, DOI, and affiliations.
@@ -46,8 +48,9 @@ class DataHandler:
             await db.commit()
             self.logger.info(f"Table 'results' created or already exists in database '{self.db_name}'")
 
-    async def insert_result(self, result: Dict):
-        """Inserts a single scraped result into the 'results' table.
+    async def add_result(self, result: Dict):
+        """
+        Adds a single scraped result to the 'results' table.
 
         Handles SQLiteIntegrityError for duplicate entries (based on article_url)
         by logging a debug message and skipping the insertion. Logs other database
@@ -93,7 +96,8 @@ class DataHandler:
                 pass  # Log and skip on other database errors
 
     async def result_exists(self, article_url: str) -> bool:
-        """Checks if a result with the given article_url already exists in the database.
+        """
+        Checks if a result with the given article_url already exists in the database.
 
         Args:
             article_url (str): The article URL to check for existence.
@@ -109,7 +113,8 @@ class DataHandler:
                 return exists
 
     def save_to_csv(self, results: List[Dict], filename: str):
-        """Saves a list of scraped results to a CSV file.
+        """
+        Saves a list of scraped results to a CSV file.
 
         Uses pandas DataFrame for efficient CSV writing.
 
@@ -130,7 +135,8 @@ class DataHandler:
             self.logger.error(f"Error writing to CSV file '{filename}': {e}", exc_info=True)
 
     def save_to_json(self, results: List[Dict], filename: str):
-        """Saves a list of scraped results to a JSON file.
+        """
+        Saves a list of scraped results to a JSON file.
 
         Args:
             results (List[Dict]): A list of dictionaries, where each dictionary
@@ -149,7 +155,8 @@ class DataHandler:
             self.logger.error(f"Error writing to JSON file '{filename}': {e}", exc_info=True)
 
     def save_to_dataframe(self, results: List[Dict]) -> pd.DataFrame:
-        """Converts a list of scraped results to a pandas DataFrame.
+        """
+        Converts a list of scraped results to a pandas DataFrame.
 
         Args:
             results (List[Dict]): A list of dictionaries, where each dictionary
@@ -168,3 +175,27 @@ class DataHandler:
         except Exception as e:
             self.logger.error(f"Error converting results to DataFrame: {e}", exc_info=True)
             return pd.DataFrame()  # Return empty DataFrame on error
+
+    async def get_all_results(self) -> List[Dict]:
+        """
+        Retrieves all results from the 'results' table in the database.
+
+        Returns:
+            List[Dict]: A list of dictionaries, where each dictionary represents a row
+                        from the 'results' table. Returns an empty list if no results
+                        are found or an error occurs.
+
+        """
+        results = []
+        try:
+            async with aiosqlite.connect(self.db_name) as db:
+                db.row_factory = sqlite3.Row  # Access columns by name
+                async with db.execute("SELECT * FROM results") as cursor:
+                    rows = await cursor.fetchall()
+                    for row in rows:
+                        results.append(dict(row))
+            self.logger.info(f"Retrieved {len(results)} results from the database.")
+            return results
+        except Exception as e:
+            self.logger.error(f"Error retrieving results from database: {e}", exc_info=True)
+            return []  # Return empty list on error
