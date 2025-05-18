@@ -16,6 +16,25 @@ This file records architectural and implementation decisions using a list format
 ## Implementation Details
 
 - ***
+- ***
+
+## Decision
+
+[2025-05-18 16:00:00] - Modified `ProxyManager` to use a "sticky" proxy strategy.
+
+## Rationale
+
+The previous strategy of selecting a random proxy for each request could lead to rapid IP cycling and potentially quicker blacklisting or CAPTCHA triggers. A "sticky" proxy strategy, where the same IP is used until it encounters an issue (like being blacklisted), aims to reduce the frequency of IP changes, potentially improving stability and reducing the likelihood of triggering anti-bot measures.
+
+## Implementation Details
+
+- Added `self.current_proxy: Optional[str]` to `ProxyManager` to store the active proxy.
+- Renamed `get_random_proxy()` to `get_proxy()`.
+- `get_proxy()` logic:
+  - Returns `self.current_proxy` if it's set and not blacklisted.
+  - If `self.current_proxy` is invalid or becomes blacklisted, it selects a new proxy from the available pool, sets it as `self.current_proxy`, and returns it.
+- `remove_proxy(proxy)` now sets `self.current_proxy` to `None` if the blacklisted proxy was the current one.
+- `Fetcher` was updated to call `self.proxy_manager.get_proxy()` instead of `get_random_proxy()`.
 
 ## Decision
 

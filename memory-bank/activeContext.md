@@ -9,6 +9,8 @@ This file tracks the project's current status, including recent changes, current
 
 - [2025-05-17 17:01:00] - Continuing to write unit tests for the Fetcher module (`fetcher.py`), focusing on `fetch_page` scenarios and other methods.
 
+- [2025-05-18 16:00:00] - Modified `ProxyManager` to use a "sticky" proxy (reuse IP until blacklisted) and updated `Fetcher` accordingly.
+
 ## Recent Changes
 
 -

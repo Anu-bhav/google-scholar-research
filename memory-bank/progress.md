@@ -22,6 +22,7 @@ This file tracks the project's progress using a task list format.
 - [2025-05-17 17:32:00] - Implemented and passed generic pattern PDF link test for `Fetcher.scrape_pdf_link` in `test_fetcher.py`.
 - [2025-05-17 17:37:00] - Implemented and passed tests for `Fetcher.scrape_pdf_link` covering meta tag, site-specific (Nature), and Unpaywall failure scenarios (404, no doi_url) in `test_fetcher.py`.
 - [2025-05-17 17:45:00] - Implemented and passed a comprehensive suite of tests for `Fetcher.extract_cited_title` covering various success and failure paths in `test_fetcher.py`.
+- [2025-05-18 16:00:00] - Refactored `ProxyManager` to implement a "sticky" proxy strategy (reuse IP until blacklisted). Updated `Fetcher` to use the new `get_proxy` method.
 
 ## Current Tasks
 

@@ -50,6 +50,7 @@ class ProxyManager:
         self.num_proxies = num_proxies
         self.timeout = timeout
         self.debug_mode = debug_mode  # Store the debug_mode flag
+        self.current_proxy: Optional[str] = None
         self.test_url = "https://scholar.google.com/"
         self._load_blacklist()  # Load blacklist from file at initialization
 
@@ -203,24 +204,47 @@ class ProxyManager:
         """Force refresh the proxy list."""
         await self.get_working_proxies()
 
-    async def get_random_proxy(self) -> Optional[str]:
-        """Return a random working proxy, updating usage stats."""
+    def _update_proxy_usage_stats(self, proxy: str):
+        """Helper to update usage stats for a proxy."""
+        if proxy:  # Ensure proxy is not None
+            self._initialize_proxy_stats(proxy)  # Ensure stats are initialized
+            self.proxy_performance[proxy]["last_used"] = time.time()
+            self.proxy_performance[proxy]["request_count"] += 1
+
+    async def get_proxy(self) -> Optional[str]:
+        """
+        Return the current active proxy if available and not blacklisted.
+        If not, select a new proxy, set it as active, and return it.
+        Cycles through available proxies if the current one gets blacklisted.
+        """
         if self.force_direct_connection:
-            self.logger.info("Forcing direct connection: get_random_proxy returning None.")
+            self.logger.info("Forcing direct connection: get_proxy returning None.")
             return None
 
         if self.debug_mode:
-            # --- DEBUG: Force no proxy ---
-            self.logger.warning("DEBUG MODE: Forcing direct connection (no proxy).")
+            self.logger.warning("DEBUG MODE: Forcing direct connection (no proxy) in get_proxy.")
             return None
-            # --- END DEBUG ---
 
-        # Original logic if not in debug mode:
+        # Check if current_proxy is valid and not blacklisted
+        if self.current_proxy:
+            if (
+                self.current_proxy in self.blacklist
+                and time.time() - float(self.blacklist[self.current_proxy]) < self.blacklist_duration
+            ):
+                self.logger.info(f"Current proxy {self.current_proxy} is blacklisted. Attempting to get a new one.")
+                self.current_proxy = None  # Invalidate it
+            else:
+                # Current proxy is still good or not in blacklist / blacklist expired
+                self.logger.debug(f"Reusing current_proxy: {self.current_proxy}")
+                self._update_proxy_usage_stats(self.current_proxy)  # Update usage stats
+                return self.current_proxy
+
+        # If no current_proxy or it was invalidated, try to get a new one
         try:
             if not self.proxy_list:
                 current_time = time.time()
                 if current_time - self.last_refresh > self.refresh_interval:
-                    self.logger.info("Proxy list empty and refresh interval passed, refreshing proxies in get_random_proxy.")
+                    self.logger.info("Proxy list empty and refresh interval passed, refreshing proxies in get_proxy.")
                     await self.refresh_proxies()
                 # Check again if list is still empty after potential refresh
                 if not self.proxy_list:
@@ -228,32 +252,57 @@ class ProxyManager:
                     await self.refresh_proxies()  # Attempt refresh one more time if it's critical
 
                 if not self.proxy_list:  # Final check
-                    self.logger.error("No working proxies available even after refresh attempts in get_random_proxy.")
+                    self.logger.error("No working proxies available even after refresh attempts in get_proxy.")
+                    self.current_proxy = None
                     raise NoProxiesAvailable("No working proxies available after refresh attempts.")
 
-            # If we have proxies after all checks and potential refreshes
             if self.proxy_list:
-                proxy = random.choice(self.proxy_list)
-                self._initialize_proxy_stats(proxy)  # Ensure stats are initialized
-                self.proxy_performance[proxy]["last_used"] = time.time()
-                self.proxy_performance[proxy]["request_count"] += 1
-                return proxy
+                available_proxies = [
+                    p
+                    for p in self.proxy_list
+                    if not (p in self.blacklist and time.time() - float(self.blacklist[p]) < self.blacklist_duration)
+                ]
+                if not available_proxies:
+                    self.logger.warning(
+                        "No proxies available in proxy_list that are not currently blacklisted. Attempting refresh."
+                    )
+                    await self.refresh_proxies()
+                    available_proxies = [
+                        p
+                        for p in self.proxy_list
+                        if not (p in self.blacklist and time.time() - float(self.blacklist[p]) < self.blacklist_duration)
+                    ]
+                    if not available_proxies:
+                        self.logger.error("Still no non-blacklisted proxies available after refresh.")
+                        self.current_proxy = None
+                        raise NoProxiesAvailable("No non-blacklisted proxies available after refresh.")
 
-            # This path should ideally not be reached if NoProxiesAvailable was raised correctly above.
-            # However, as a fallback or if the list became empty through other means unexpectedly.
-            self.logger.warning("get_random_proxy: proxy_list is empty when trying to select a proxy, returning None.")
+                new_proxy_candidate = random.choice(available_proxies)
+                self.current_proxy = new_proxy_candidate
+                self.logger.info(f"Selected new current_proxy: {self.current_proxy}")
+                self._update_proxy_usage_stats(self.current_proxy)
+                return self.current_proxy
+
+            self.logger.warning("get_proxy: proxy_list is empty when trying to select a new proxy, returning None.")
+            self.current_proxy = None
             return None
         except NoProxiesAvailable:
-            self.logger.warning("NoProxiesAvailable caught in get_random_proxy, returning None.")
+            self.logger.warning("NoProxiesAvailable caught in get_proxy, returning None.")
+            self.current_proxy = None
             return None
 
     def remove_proxy(self, proxy: str):
-        """Remove a proxy from the working list and blacklist it."""
+        """Remove a proxy from the working list, blacklist it, and clear if it's the current_proxy."""
         if proxy in self.proxy_list:
             self.proxy_list.remove(proxy)
-            self.blacklist[proxy] = str(time.time())  # Store timestamp as string for JSON compatibility
-            self.logger.info(f"Removed proxy {proxy} and added to blacklist.")
-            self._save_blacklist()  # Save blacklist after removing proxy
+
+        self.blacklist[proxy] = str(time.time())
+        self.logger.info(f"Proxy {proxy} added/updated in blacklist.")
+        self._save_blacklist()
+
+        if self.current_proxy == proxy:
+            self.logger.info(f"Current proxy {proxy} was blacklisted. Clearing current_proxy.")
+            self.current_proxy = None
 
     def mark_proxy_failure(self, proxy: str, error_type: ProxyErrorType):
         """Mark a proxy as failed and record the error type."""

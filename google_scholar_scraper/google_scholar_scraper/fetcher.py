@@ -69,7 +69,7 @@ class Fetcher:
         await self._create_client()
         assert self.client is not None, "Client session must be initialized by _create_client"
 
-        proxy = await self.proxy_manager.get_random_proxy()  # Get a proxy *once* per fetch_page call
+        proxy = await self.proxy_manager.get_proxy()  # Get a proxy *once* per fetch_page call
         if proxy:
             proxy_url = f"http://{proxy}"
             self.proxies_used.add(proxy)
@@ -248,7 +248,7 @@ class Fetcher:
         await self._create_client()
         assert self.client is not None, "Client session must be initialized by _create_client"
 
-        proxy = await self.proxy_manager.get_random_proxy()
+        proxy = await self.proxy_manager.get_proxy()
         proxy_url = f"http://{proxy}" if proxy else None
 
         for attempt in range(retries):
@@ -305,7 +305,7 @@ class Fetcher:
                         )
                         await self.proxy_manager.refresh_proxies()  # Attempt to get fresh proxies
                         # Get a new proxy for the next attempt
-                        new_proxy = await self.proxy_manager.get_random_proxy()
+                        new_proxy = await self.proxy_manager.get_proxy()
                         if new_proxy != proxy:  # If we got a different proxy
                             self.logger.info(f"Retrying PDF download with new proxy: {new_proxy}")
                             proxy = new_proxy  # Update current proxy
